@@ -33,6 +33,7 @@ typedef struct {
     bool game_over;
     bool snake_is_here;
     bool portals_open;
+    int wall_anim_step;
     
     int max_grid_x;
     int max_grid_y;
@@ -60,6 +61,7 @@ void reset_game(void) {
     game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
     game.game_over = false;
     game.snake_is_here = true;
+    game.wall_anim_step = 0;
 }
 
 void process_inputs(QueueHandle_t events) {
@@ -157,10 +159,37 @@ void check_self_collision(void) {
 // -- FUNCIONES DE RENDERIZADO --
 
 void render_walls(void) {
-    display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true);
-    display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true);
-    display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true);
-    display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true);
+    int w = BOARD_LCD_WIDTH;  
+    int h = BOARD_LCD_HEIGHT; 
+    int step = game.wall_anim_step;
+
+    // Limitamos el step a 64 (la mitad del ancho)
+    if (step > w / 2) step = w / 2;
+
+    int horiz_w = (w / 2) - step;       // Ancho restante de las paredes superior/inferior
+    int vert_h = (h / 2) - (step / 2);  // Alto restante de las laterales (se encoge a la mitad de velocidad)
+
+    // --- Dibujar Techo y Piso ---
+    if (horiz_w > 0) {
+        // Techo (Mitad Izquierda y Mitad Derecha)
+        display_fill_rect(0, 0, horiz_w, WALL_SIZE, true);
+        display_fill_rect((w / 2) + step, 0, horiz_w, WALL_SIZE, true);
+        
+        // Piso (Mitad Izquierda y Mitad Derecha)
+        display_fill_rect(0, h - WALL_SIZE, horiz_w, WALL_SIZE, true);
+        display_fill_rect((w / 2) + step, h - WALL_SIZE, horiz_w, WALL_SIZE, true);
+    }
+
+    // --- Dibujar Paredes Laterales ---
+    if (vert_h > 0) {
+        // Pared Izquierda (Mitad Arriba y Mitad Abajo)
+        display_fill_rect(0, 0, WALL_SIZE, vert_h, true);
+        display_fill_rect(0, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
+
+        // Pared Derecha (Mitad Arriba y Mitad Abajo)
+        display_fill_rect(w - WALL_SIZE, 0, WALL_SIZE, vert_h, true);
+        display_fill_rect(w - WALL_SIZE, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
+    }
 }
 
 void render_game_over(void) {
@@ -214,6 +243,10 @@ void app_main(void)
         if (!game.game_over) {
             game.portals_open = (game.score >= 2);
 
+            if (game.portals_open && game.wall_anim_step < 128) {
+                game.wall_anim_step += 16; 
+            }
+
             if (game.snake_is_here) {
                 resolve_new_direction();
 
@@ -242,9 +275,8 @@ void app_main(void)
         if (game.display_ok) {
             display_clear();
             
-            if (!game.portals_open) {
-                render_walls();
-            }
+            render_walls();
+            
             
             if (game.game_over) {
                 render_game_over();
