@@ -6,12 +6,23 @@
 #include "esp_log.h"
 #include "esp_random.h"
 
-#include "audio.h"
+//#include "audio.h"
 #include "buttons.h"
 #include "display.h"
 #include "menu.h"
 #include "board.h" 
 #include "sdkconfig.h"
+
+#include "esp_event.h"
+#include "esp_http_server.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
+
+#define WIFI_SSID   "kiwi-audio"
+#define WIFI_PASS   "kiwikiwi"
+
+static httpd_handle_t s_server = NULL;
 
 static const char *TAG = "demo";
 
@@ -48,6 +59,94 @@ typedef struct {
 } GameState;
 
 static GameState game;
+
+// --- INICIO SISTEMA DE AUDIO POR WIFI ---
+static const char s_page[] =
+    "<!doctype html><html><head><meta charset=utf-8>"
+    "<meta name=viewport content='width=device-width,initial-scale=1'><title>Snake Audio</title>"
+    "<style>body{font-family:sans-serif;text-align:center;padding-top:15vh;background:#222;color:#fff}"
+    "button{font-size:1.6em;padding:1em 2em;margin:.4em;border-radius:10px;background:#4CAF50;color:white;border:none}</style></head><body>"
+    "<h1>Snake Audio</h1>"
+    "<button id=go>Conectar Parlante</button>"
+    "<p id=st>Toca el boton para escuchar el juego</p><script>"
+    "let ctx,ws,pend=false;"
+    "go.onclick=()=>{ctx=ctx||new AudioContext();ctx.resume();connect()};"
+    "function connect(){if(ws&&ws.readyState<2)return;"
+    "ws=new WebSocket('ws://'+location.host+'/ws');"
+    "ws.onopen=()=>{st.textContent='Conectado! Volve al juego.';};"
+    "ws.onclose=()=>{st.textContent='Desconectado, reintentando...';setTimeout(connect,1000)};"
+    "ws.onmessage=e=>{const[f,ms]=e.data.split(' ').map(Number);tone(f,ms/1000)}}"
+    "function tone(f,d){const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();"
+    "o.frequency.value=f;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.3,t+.005);"
+    "g.gain.setValueAtTime(.3,t+d-.005);g.gain.linearRampToValueAtTime(0,t+d);"
+    "o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+d)}"
+    "</script></body></html>";
+
+static esp_err_t page_handler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, s_page, sizeof(s_page) - 1);
+}
+
+static esp_err_t ws_handler(httpd_req_t *req) {
+    if (req->method == HTTP_GET) { ESP_LOGI(TAG, "Celular conectado"); return ESP_OK; }
+    return ESP_OK;
+}
+
+static void broadcast_audio(void *arg) {
+    char text[24];
+    int len = snprintf(text, sizeof(text), "%d %d", (int)((uintptr_t)arg >> 16), (int)((uintptr_t)arg & 0xffff));
+    httpd_ws_frame_t frame = {.type = HTTPD_WS_TYPE_TEXT, .payload = (uint8_t *)text, .len = len};
+    int fds[CONFIG_LWIP_MAX_SOCKETS];
+    size_t n = CONFIG_LWIP_MAX_SOCKETS;
+    if (httpd_get_client_list(s_server, &n, fds) == ESP_OK) {
+        for (size_t i = 0; i < n; i++) {
+            if (httpd_ws_get_fd_info(s_server, fds[i]) == HTTPD_WS_CLIENT_WEBSOCKET) {
+                httpd_ws_send_frame_async(s_server, fds[i], &frame);
+            }
+        }
+    }
+}
+
+// Nueva función de audio no-bloqueante
+static void wifi_audio_play_tone(int freq_hz, int ms) {
+    if (s_server != NULL) {
+        httpd_queue_work(s_server, broadcast_audio, (void *)(uintptr_t)(freq_hz << 16 | ms));
+    }
+}
+
+static bool wifi_audio_init(void) {
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_ap();
+
+    wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&init_cfg));
+    wifi_config_t ap_cfg = {
+        .ap = {.ssid = WIFI_SSID, .ssid_len = strlen(WIFI_SSID), .password = WIFI_PASS, .max_connection = 4, .authmode = WIFI_AUTH_WPA2_PSK},
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_cfg));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_wifi_set_ps(WIFI_PS_NONE);
+
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    if (httpd_start(&s_server, &cfg) == ESP_OK) {
+        const httpd_uri_t page = {.uri = "/", .method = HTTP_GET, .handler = page_handler};
+        const httpd_uri_t ws = {.uri = "/ws", .method = HTTP_GET, .handler = ws_handler, .is_websocket = true};
+        httpd_register_uri_handler(s_server, &page);
+        httpd_register_uri_handler(s_server, &ws);
+        ESP_LOGI(TAG, "Conectate al Wi-Fi '%s' (clave '%s') y entra a http://192.168.4.1", WIFI_SSID, WIFI_PASS);
+        return true;
+    }
+    return false;
+}
+// --- FIN SISTEMA DE AUDIO POR WIFI ---
 
 // -- FUNCIONES DE LÓGICA --
 
@@ -122,7 +221,7 @@ void check_walls(void) {
             if (game.audio_ok) audio_play_tone(440, 150);
         } else {
             game.game_over = true; 
-            if (game.audio_ok) audio_play_tone(150, 400);
+            if (game.audio_ok) wifi_audio_play_tone(150, 400);
         }
     }
 }
@@ -130,7 +229,7 @@ void check_walls(void) {
 void check_apple_collision(void) {
     if (game.x == game.apple_x && game.y == game.apple_y) {
         if (game.score < MAX_TAIL) game.score++;
-        if (game.audio_ok) audio_play_tone(880, 50);
+        if (game.audio_ok) wifi_audio_play_tone(880, 50);
         game.apple_x = WALL_SIZE + (esp_random() % game.max_grid_x) * SQUARE_SIZE;
         game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
     }
@@ -151,7 +250,7 @@ void check_self_collision(void) {
     for (int i = 0; i < game.score; i++) {
         if (game.x == game.tail_x[i] && game.y == game.tail_y[i]) {
             game.game_over = true;
-            if (game.audio_ok) audio_play_tone(150, 400);
+            if (game.audio_ok) wifi_audio_play_tone(150, 400);
         }
     }
 }
@@ -222,9 +321,10 @@ void app_main(void)
     game.display_ok = display_init() == ESP_OK;
     ESP_ERROR_CHECK(buttons_init());
 
-    game.audio_ok = audio_init() == ESP_OK;
+    game.audio_ok = wifi_audio_init();
     if (game.audio_ok) {
-        audio_play_tone(523, 120);
+        // Melodía inicial opcional (esta la hacemos bloqueante intencionalmente porque es al prender la placa)
+        wifi_audio_play_tone(523, 120);
     }
 
     QueueHandle_t events = buttons_event_queue();
