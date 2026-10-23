@@ -44,66 +44,83 @@ void app_main(void)
 
     QueueHandle_t events = buttons_event_queue();
 
-    // --- ESTADO INICIAL DEL CUADRADITO ---
+    // --- ESTADO INICIAL DEL JUEGO ---
     const int SQUARE_SIZE = 4;
-    int square_x = BOARD_LCD_WIDTH / 2;  
-    int square_y = BOARD_LCD_HEIGHT / 2; 
+    int square_x = BOARD_LCD_WIDTH / 2;  //[cite: 58]
+    int square_y = BOARD_LCD_HEIGHT / 2; //[cite: 58]
     
-    // Velocidad/Direccion inicial (se mueve a la derecha)
     int dir_x = 1;
     int dir_y = 0;
+    
+    bool game_over = false; // <-- Nuevo estado
 
-    // Frecuencia de actualizacion del juego (100ms = 10 FPS)
-    const int GAME_SPEED_MS = 100;
+    const int GAME_SPEED_MS = 200;
     TickType_t last_wake_time = xTaskGetTickCount();
 
     // UN SOLO BUCLE PRINCIPAL
     while (1) {
         button_event_t ev;
         
-        // 1. LEER INPUTS (Consumir toda la cola sin bloquear)
+        // 1. LEER INPUTS
         while (xQueueReceive(events, &ev, 0) == pdTRUE) {
             if (ev.pressed) {
-                switch (ev.id) {
-                    case BTN_UP:    
-                        // Físicamente es el botón IZQUIERDA
-                        if (dir_x == 0) { dir_x = -1; dir_y = 0; } 
-                        break;
-                    case BTN_RIGHT: 
-                        // Físicamente es el botón ARRIBA
-                        if (dir_y == 0) { dir_x = 0; dir_y = -1; } 
-                        break;
-                    case BTN_DOWN:  
-                        // Físicamente es el botón DERECHA
-                        if (dir_x == 0) { dir_x = 1; dir_y = 0; }  
-                        break;
-                    case BTN_LEFT:  
-                        // Físicamente es el botón ABAJO
-                        if (dir_y == 0) { dir_x = 0; dir_y = 1; } 
-                        break;
-                    default: 
-                        break;
+                if (game_over) {
+                    // Si perdiste, cualquier botón reinicia el juego
+                    square_x = BOARD_LCD_WIDTH / 2;
+                    square_y = BOARD_LCD_HEIGHT / 2;
+                    dir_x = 1;
+                    dir_y = 0;
+                    game_over = false;
+                } else {
+                    // Joystick rotado arreglado
+                    switch (ev.id) {
+                        case BTN_UP:    
+                            if (dir_x == 0) { dir_x = -1; dir_y = 0; } 
+                            break;
+                        case BTN_RIGHT: 
+                            if (dir_y == 0) { dir_x = 0; dir_y = -1; } 
+                            break;
+                        case BTN_DOWN:  
+                            if (dir_x == 0) { dir_x = 1; dir_y = 0; }  
+                            break;
+                        case BTN_LEFT:  
+                            if (dir_y == 0) { dir_x = 0; dir_y = 1; } 
+                            break;
+                        default: 
+                            break;
+                    }
                 }
             }
         }
 
-        // 2. ACTUALIZAR LÓGICA
-        square_x += dir_x * SQUARE_SIZE;
-        square_y += dir_y * SQUARE_SIZE;
+        // 2. ACTUALIZAR LÓGICA (Solo si estás jugando)
+        if (!game_over) {
+            square_x += dir_x * SQUARE_SIZE;
+            square_y += dir_y * SQUARE_SIZE;
 
-        if (square_x >= BOARD_LCD_WIDTH) square_x = 0;
-        if (square_x < 0) square_x = BOARD_LCD_WIDTH - SQUARE_SIZE;
-        if (square_y >= BOARD_LCD_HEIGHT) square_y = 0;
-        if (square_y < 0) square_y = BOARD_LCD_HEIGHT - SQUARE_SIZE;
+            // Colisiones contra las paredes usando los tamaños de board.h[cite: 58]
+            if (square_x >= BOARD_LCD_WIDTH || square_x < 0 || 
+                square_y >= BOARD_LCD_HEIGHT || square_y < 0) {
+                game_over = true;
+            }
+        }
 
         // 3. RENDERIZAR
         if (display_ok) {
-            display_clear(); 
-            display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); 
-            display_flush(); 
+            display_clear(); //[cite: 63]
+            
+            if (game_over) {
+                // Centrado a ojo (128 pixeles de ancho, el texto ocupa ~54)
+                display_text(37, 28, "GAME OVER", false); //[cite: 63]
+            } else {
+                display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); //[cite: 63]
+            }
+            
+            display_flush(); //[cite: 63]
         }
 
         // 4. ESPERAR AL PRÓXIMO FRAME
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
+    
     }
 }
