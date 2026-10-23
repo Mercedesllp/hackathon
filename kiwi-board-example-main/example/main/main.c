@@ -7,65 +7,10 @@
 #include "audio.h"
 #include "buttons.h"
 #include "display.h"
+#include "board.h" 
+#include "sdkconfig.h"
 
 static const char *TAG = "demo";
-
-#define UI_PERIOD_MS 50
-
-static const int s_button_freq[BTN_COUNT] = {
-    [BTN_UP] = 659,
-    [BTN_DOWN] = 440,
-    [BTN_LEFT] = 494,
-    [BTN_RIGHT] = 587,
-    [BTN_CENTER] = 784,
-    [BTN_KEY1] = 262,
-    [BTN_KEY2] = 330,
-    [BTN_KEY3] = 392,
-    [BTN_KEY4] = 523,
-};
-
-static void draw_key(int x, int y, int size, bool pressed)
-{
-    if (pressed) {
-        display_fill_rect(x, y, size, size, true);
-    } else {
-        display_fill_rect(x, y, size, size, false);
-        display_draw_rect(x, y, size, size);
-    }
-}
-
-static void draw_ui(uint32_t pressed, int mic_level, bool audio_ok)
-{
-    char line[24];
-
-    display_clear();
-    display_text(2, 1, "HACKATHON BOARD", true);
-
-    display_text(0, 14, "MIC", false);
-    display_draw_rect(22, 13, 82, 10);
-    display_fill_rect(24, 15, mic_level * 78 / 100, 6, true);
-    if (audio_ok) {
-        snprintf(line, sizeof(line), "%3d", mic_level);
-        display_text(107, 14, line, false);
-    } else {
-        display_text(107, 14, "ERR", false);
-    }
-
-    draw_key(15, 28, 10, pressed & (1u << BTN_UP));
-    draw_key(4, 39, 10, pressed & (1u << BTN_LEFT));
-    draw_key(15, 39, 10, pressed & (1u << BTN_CENTER));
-    draw_key(26, 39, 10, pressed & (1u << BTN_RIGHT));
-    draw_key(15, 50, 10, pressed & (1u << BTN_DOWN));
-
-    display_text(50, 29, "KEYS", false);
-    for (int i = 0; i < 4; i++) {
-        bool on = pressed & (1u << (BTN_KEY1 + i));
-        int x = 50 + i * 15;
-        draw_key(x, 40, 13, on);
-        char num[2] = {'1' + i, 0};
-        display_text(x + 4, 43, num, on);
-    }
-}
 
 void app_main(void)
 {
@@ -98,25 +43,63 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(500));
 
     QueueHandle_t events = buttons_event_queue();
-    int log_div = 0;
+
+    // --- ESTADO INICIAL DEL CUADRADITO ---
+    const int SQUARE_SIZE = 4;
+    int square_x = BOARD_LCD_WIDTH / 2;  
+    int square_y = BOARD_LCD_HEIGHT / 2; 
+    
+    // Velocidad/Direccion inicial (se mueve a la derecha)
+    int dir_x = 1;
+    int dir_y = 0;
+
+    // Frecuencia de actualizacion del juego (100ms = 10 FPS)
+    const int GAME_SPEED_MS = 100;
+    TickType_t last_wake_time = xTaskGetTickCount();
+
+    // UN SOLO BUCLE PRINCIPAL
     while (1) {
         button_event_t ev;
-        if (xQueueReceive(events, &ev, pdMS_TO_TICKS(UI_PERIOD_MS)) == pdTRUE) {
-            ESP_LOGI(TAG, "button %s %s", buttons_name(ev.id), ev.pressed ? "pressed" : "released");
-            if (ev.pressed && audio_ok) {
-                audio_play_tone(s_button_freq[ev.id], 100);
+        
+        // 1. LEER INPUTS (Consumir toda la cola sin bloquear)
+        while (xQueueReceive(events, &ev, 0) == pdTRUE) {
+            if (ev.pressed) {
+                switch (ev.id) {
+                    case BTN_UP:    
+                        if (dir_y == 0) { dir_x = 0; dir_y = -1; } 
+                        break;
+                    case BTN_DOWN:  
+                        if (dir_y == 0) { dir_x = 0; dir_y = 1; }  
+                        break;
+                    case BTN_LEFT:  
+                        if (dir_x == 0) { dir_x = -1; dir_y = 0; } 
+                        break;
+                    case BTN_RIGHT: 
+                        if (dir_x == 0) { dir_x = 1; dir_y = 0; }  
+                        break;
+                    default: 
+                        break;
+                }
             }
         }
 
-        int mic_level = audio_ok ? audio_mic_level() : 0;
+        // 2. ACTUALIZAR LÓGICA
+        square_x += dir_x * SQUARE_SIZE;
+        square_y += dir_y * SQUARE_SIZE;
+
+        if (square_x >= BOARD_LCD_WIDTH) square_x = 0;
+        if (square_x < 0) square_x = BOARD_LCD_WIDTH - SQUARE_SIZE;
+        if (square_y >= BOARD_LCD_HEIGHT) square_y = 0;
+        if (square_y < 0) square_y = BOARD_LCD_HEIGHT - SQUARE_SIZE;
+
+        // 3. RENDERIZAR
         if (display_ok) {
-            draw_ui(buttons_read(), mic_level, audio_ok);
-            display_flush();
+            display_clear(); 
+            display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); 
+            display_flush(); 
         }
 
-        if (audio_ok && ++log_div >= 1000 / UI_PERIOD_MS) {
-            log_div = 0;
-            ESP_LOGI(TAG, "mic level: %d", mic_level);
-        }
+        // 4. ESPERAR AL PRÓXIMO FRAME
+        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
     }
 }
