@@ -268,6 +268,33 @@ void app_main(void)
                 // TODO: LEER DATOS I2C ACÁ
                 // Si la serpiente vuelve a esta placa:
                 // game.snake_is_here = true;
+
+                // Si tocás cualquier botón direccional, la serpiente vuelve
+                if (game.votos_arriba > 0 || game.votos_abajo > 0 || 
+                    game.votos_izq > 0 || game.votos_der > 0) {
+                    
+                    game.snake_is_here = true;
+
+                    // Averiguamos por qué borde se fue para hacerla aparecer por el opuesto
+                    int current_grid_x = (game.x - WALL_SIZE) / SQUARE_SIZE;
+                    int current_grid_y = (game.y - WALL_SIZE) / SQUARE_SIZE;
+
+                    // Si salió por la izquierda, aparece por la derecha (y viceversa)
+                    if (current_grid_x < 0) {
+                        game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
+                    } else if (current_grid_x >= game.max_grid_x) {
+                        game.x = WALL_SIZE;
+                    }
+
+                    // Si salió por arriba, aparece por abajo (y viceversa)
+                    if (current_grid_y < 0) {
+                        game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
+                    } else if (current_grid_y >= game.max_grid_y) {
+                        game.y = WALL_SIZE;
+                    }
+                    
+                    if (game.audio_ok) audio_play_tone(660, 150);
+                }
             }
         }
 
