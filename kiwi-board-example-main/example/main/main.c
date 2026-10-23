@@ -44,25 +44,24 @@ void app_main(void)
 
     QueueHandle_t events = buttons_event_queue();
 
-    // --- ESTADO INICIAL DEL JUEGO ---
+    // Estado inicial
     const int SQUARE_SIZE = 4;
     const int WALL_SIZE = 1;
-    int square_x = BOARD_LCD_WIDTH / 2;  //[cite: 58]
-    int square_y = BOARD_LCD_HEIGHT / 2; //[cite: 58]
+    int square_x = BOARD_LCD_WIDTH / 2; 
+    int square_y = BOARD_LCD_HEIGHT / 2;
     
     int dir_x = 1;
     int dir_y = 0;
     
-    bool game_over = false; // <-- Nuevo estado
+    bool game_over = false; 
 
     const int GAME_SPEED_MS = 200;
     TickType_t last_wake_time = xTaskGetTickCount();
 
-    // UN SOLO BUCLE PRINCIPAL
     while (1) {
         button_event_t ev;
         
-        // 1. LEER INPUTS
+        // Leer inputs
         while (xQueueReceive(events, &ev, 0) == pdTRUE) {
             if (ev.pressed) {
                 if (game_over) {
@@ -94,46 +93,39 @@ void app_main(void)
             }
         }
 
-        // 2. ACTUALIZAR LÓGICA (Solo si estás jugando)
         if (!game_over) {
+            // Se mueve
             square_x += dir_x * SQUARE_SIZE;
             square_y += dir_y * SQUARE_SIZE;
 
-            // Colisiones contra las paredes (ajustadas al grosor de la pared)
-            // BOARD_LCD_WIDTH es 128 y BOARD_LCD_HEIGHT es 64[cite: 58]
+            // Chequea si te moriste 
             if (square_x >= BOARD_LCD_WIDTH - SQUARE_SIZE || square_x < SQUARE_SIZE || 
                 square_y >= BOARD_LCD_HEIGHT - SQUARE_SIZE || square_y < SQUARE_SIZE) {
                 game_over = true;
             }
         }
 
-        // 3. RENDERIZAR
+        // Renderizar
         if (display_ok) {
-            display_clear(); //[cite: 63]
+            display_clear(); 
             
-            // --- DIBUJAR PAREDES ---
-            // Pared superior
-            display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true); //[cite: 63]
-            // Pared inferior
-            display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true); //[cite: 63]
-            // Pared izquierda
-            display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
-            // Pared derecha
-            display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
+            // Paredes
+            display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true); 
+            display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true); 
+            display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
+            display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
             
             if (game_over) {
-                // Mensaje centrado
-                display_text(37, 28, "GAME OVER", false); //[cite: 63]
+                display_text(37, 28, "GAME OVER", false); 
             } else {
-                // Dibujar el jugador
-                display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); //[cite: 63]
+                // Jugador
+                display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); 
             }
             
-            display_flush(); //[cite: 63]
+            display_flush(); 
         }
 
-        // 4. ESPERAR AL PRÓXIMO FRAME
+        // Espera para siguiente frame
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
-    
     }
 }
