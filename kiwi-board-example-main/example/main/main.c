@@ -94,6 +94,7 @@ void app_main(void)
                 } else {
                     // Mantenemos tu arreglo del joystick rotado intacto
                     switch (ev.id) {
+                        // --- CONTROLES CON EL JOYSTICK ---
                         case BTN_UP:    
                             if (dir_x == 0) { dir_x = -1; dir_y = 0; } 
                             break;
@@ -106,6 +107,27 @@ void app_main(void)
                         case BTN_LEFT:  
                             if (dir_y == 0) { dir_x = 0; dir_y = 1; } 
                             break;
+
+                        // --- CONTROLES CON LOS 4 BOTONES ---
+                        // Asignamos las teclas auxiliares para jugar. 
+                        // Intercambiá los BTN_KEY si el orden físico de la placa no coincide.
+                        
+                        case BTN_KEY4: // Botón de arriba
+                            if (dir_x == 0) { dir_x = 0; dir_y = -1; }
+                            break;
+                            
+                        case BTN_KEY1: // Botón inferior izquierdo
+                            if (dir_y == 0) { dir_x = -1; dir_y = 0; }
+                            break;
+                            
+                        case BTN_KEY2: // Botón inferior central
+                            if (dir_y == 0) { dir_x = 0; dir_y = 1; }
+                            break;
+                            
+                        case BTN_KEY3: // Botón inferior derecho
+                            if (dir_y == 0) { dir_x = 1; dir_y = 0; }
+                            break;
+
                         default: 
                             break;
                     }
