@@ -7,6 +7,7 @@
 #include "audio.h"
 #include "buttons.h"
 #include "display.h"
+#include "link_test.h"
 #include "board.h" 
 #include "sdkconfig.h"
 
@@ -41,6 +42,10 @@ void app_main(void)
         ESP_LOGE(TAG, "audio init failed - continuing without sound");
     }
     vTaskDelay(pdMS_TO_TICKS(500));
+
+#if CONFIG_HACK_LINK_TEST
+    link_test_run(display_ok, audio_ok);
+#endif
 
     QueueHandle_t events = buttons_event_queue();
 

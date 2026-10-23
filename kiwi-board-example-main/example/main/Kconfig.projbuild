@@ -14,4 +14,19 @@ menu "Hackathon board demo"
         help
             Enable if the text on the OLED appears upside down.
 
+    config HACK_LINK_SECRET
+        string "Link secret (shared by your boards)"
+        default ""
+        help
+            Boards only accept ESP-NOW packets signed with the same secret.
+            Use the same value on every board of your team, keep it out of
+            git (sdkconfig is gitignored), and pick something hard to guess.
+
+    config HACK_LINK_TEST
+        bool "Link test mode (run the board-to-board test instead of the game)"
+        default n
+        help
+            Flash on both boards: each screen shows the other board's
+            buttons. Needs the same Link secret on both.
+
 endmenu
