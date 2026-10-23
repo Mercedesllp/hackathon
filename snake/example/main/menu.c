@@ -1,38 +1,40 @@
-// #include "menu.h"
+#include "menu.h"
 
-// #include "esp_check.h"
+#include "display.h"
+#include "buttons.h"
+#include "board.h"
 
-// #include "buttons.h"
-// #include "display.h"
+#define BLINK_MS 500
 
-// static esp_err_t render_menu(bool display_ok)
-// {
-//     if (!display_ok) {
-//         return ESP_OK;
-//     }
+static void draw_start(bool visible)
+{
+    display_clear();
+    display_text(49, 12, "SNAKE", false);
+    if (visible) {
+        display_text(49, 36, "START", false);
+    }
+    display_flush();
+}
 
-//     display_clear();
-//     display_text(52, 12, "Menu", false);
-//     display_set_pixel(70, 10, true);
-//     display_set_pixel(71, 9, true);
-//     display_text(49, 36, "start", true);
-//     return display_flush();
-// }
+esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok)
+{
+    button_event_t ev;
 
-// esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok)
-// {
-//     if (events == NULL) {
-//         return ESP_ERR_INVALID_ARG;
-//     }
+    // Descarta eventos viejos
+    while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
 
-//     ESP_RETURN_ON_ERROR(render_menu(display_ok), "menu", "menu render failed");
+    bool visible = true;
+    while (1) {
+        if (display_ok) {
+            draw_start(visible);
+        }
 
-//     button_event_t event;
-//     while (xQueueReceive(events, &event, portMAX_DELAY) == pdTRUE) {
-//         if (event.pressed) {
-//             return ESP_OK;
-//         }
-//     }
-
-//     return ESP_FAIL;
-// }
+        if (xQueueReceive(events, &ev, pdMS_TO_TICKS(BLINK_MS)) == pdTRUE) {
+            if (ev.pressed) {
+                return ESP_OK;
+            }
+        } else {
+            visible = !visible;
+        }
+    }
+}

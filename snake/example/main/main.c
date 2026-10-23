@@ -328,9 +328,7 @@ void app_main(void)
     }
 
     QueueHandle_t events = buttons_event_queue();
-    // ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok));
-
-    // Inicializar variables calculadas
+    ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok));    // Inicializar variables calculadas
     game.max_grid_x = (BOARD_LCD_WIDTH - 2 * WALL_SIZE) / SQUARE_SIZE;
     game.max_grid_y = (BOARD_LCD_HEIGHT - 2 * WALL_SIZE) / SQUARE_SIZE;
     reset_game();
