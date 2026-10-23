@@ -61,6 +61,8 @@ void app_main(void)
     int dir_y = 0;
     
     bool game_over = false; 
+    bool snake_is_here = true; // Empieza en la placa 1. La placa 2 debería arrancar en false.
+    bool portals_open = false;
 
     // Variables de la Serpiente
     int score = 0; 
@@ -119,121 +121,80 @@ void app_main(void)
 
         // 2. PROCESAR EL RESULTADO DE LA VOTACIÓN
         if (!game_over) {
-            // --- RESOLUCIÓN DE LA VOTACIÓN DE INPUTS ---
-            int max_votos = 0;
-            int nuevo_dir_x = dir_x;
-            int nuevo_dir_y = dir_y;
+            // Chequear si se abren los portales
+            portals_open = (score >= 2);
 
-            // Evaluamos al ganador descartando movimientos inválidos (180 grados)
-            if (votos_arriba > max_votos && dir_y == 0) {
-                max_votos = votos_arriba;
-                nuevo_dir_x = 0; nuevo_dir_y = -1;
-            }
-            if (votos_abajo > max_votos && dir_y == 0) {
-                max_votos = votos_abajo;
-                nuevo_dir_x = 0; nuevo_dir_y = 1;
-            }
-            if (votos_izq > max_votos && dir_x == 0) {
-                max_votos = votos_izq;
-                nuevo_dir_x = -1; nuevo_dir_y = 0;
-            }
-            if (votos_der > max_votos && dir_x == 0) {
-                max_votos = votos_der;
-                nuevo_dir_x = 1; nuevo_dir_y = 0;
-            }
-
-            // Aplicar la dirección ganadora (si hubo al menos un voto válido)
-            if (max_votos > 0) {
-                dir_x = nuevo_dir_x;
-                dir_y = nuevo_dir_y;
-            }
-            // -------------------------------------------
-
-            // 1. Guardar la posición anterior para mover la cola
-            int prev_x = square_x;
-            int prev_y = square_y;
-
-            // 2. Mover la cabeza
-            square_x += dir_x * SQUARE_SIZE;
-            square_y += dir_y * SQUARE_SIZE;
-
-            // 3. Chequeo de paredes usando las coordenadas de la grilla
-            int current_grid_x = (square_x - WALL_SIZE) / SQUARE_SIZE;
-            int current_grid_y = (square_y - WALL_SIZE) / SQUARE_SIZE;
-
-            if (current_grid_x < 0 || current_grid_x >= max_grid_x || 
-                current_grid_y < 0 || current_grid_y >= max_grid_y) {
+            if (snake_is_here) {
+                // ... (Acá va tu código de leer los votos de dirección y actualizar prev_x, prev_y) ...
                 
-                game_over = true;
-                if (audio_ok) audio_play_tone(150, 400); // Sonido grave al chocar
-                
-            } else {
-                // 4. Chequear colisión con la manzana
-                if (square_x == apple_x && square_y == apple_y) {
-                    if (score < MAX_TAIL) score++; // Suma punto e incrementa cola
-                    
-                    if (audio_ok) audio_play_tone(880, 50); // "Beep" agudo de comer
-                    
-                    // Tirar una manzana nueva
-                    apple_x = WALL_SIZE + (esp_random() % max_grid_x) * SQUARE_SIZE;
-                    apple_y = WALL_SIZE + (esp_random() % max_grid_y) * SQUARE_SIZE;
-                }
+                // Mover la cabeza
+                square_x += dir_x * SQUARE_SIZE;
+                square_y += dir_y * SQUARE_SIZE;
 
-                // 5. Actualizar las posiciones de toda la cola
-                for (int i = score - 1; i > 0; i--) {
-                    tail_x[i] = tail_x[i-1];
-                    tail_y[i] = tail_y[i-1];
-                }
-                if (score > 0) {
-                    tail_x[0] = prev_x;
-                    tail_y[0] = prev_y;
-                }
+                int current_grid_x = (square_x - WALL_SIZE) / SQUARE_SIZE;
+                int current_grid_y = (square_y - WALL_SIZE) / SQUARE_SIZE;
 
-                // 6. Colisión con sí mismo (te mordes la cola)
-                for (int i = 0; i < score; i++) {
-                    if (square_x == tail_x[i] && square_y == tail_y[i]) {
+                // Chequeo de bordes de pantalla
+                if (current_grid_x < 0 || current_grid_x >= max_grid_x || 
+                    current_grid_y < 0 || current_grid_y >= max_grid_y) {
+                    
+                    if (portals_open) {
+                        // ¡MAGIA! La serpiente sale de tu pantalla.
+                        snake_is_here = false;
+                        
+                        // TODO: ENVIAR DATOS A LA OTRA PLACA ACÁ
+                        // Necesitás mandar: score (largo de cola), dir_x, dir_y, y la coordenada Y o X de salida.
+                        
+                        if (audio_ok) audio_play_tone(440, 150); // Sonido de warp
+                    } else {
+                        // Portales cerrados: chocaste contra la pared.
                         game_over = true;
-                        if (audio_ok) audio_play_tone(150, 400);
+                        if (audio_ok) audio_play_tone(150, 400); 
                     }
+                } else {
+                    // ... (Acá va tu código de comer manzana, mover la cola y chocar contra sí mismo) ...
                 }
+            } else {
+                // ESTADO DE ESPERA: La serpiente está en la otra placa.
+                // TODO: LEER DATOS DE LA OTRA PLACA ACÁ
+                // if (recibi_mensaje_de_amigo) {
+                //     snake_is_here = true;
+                //     // Configurar square_x y square_y al borde opuesto de donde entró
+                //     // Configurar dir_x, dir_y, score según lo recibido
+                // }
             }
         }
 
         // Renderizar en pantalla
+        // Renderizar en pantalla
         if (display_ok) {
             display_clear(); 
             
-            // Paredes
-            display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true); 
-            display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true); 
-            display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
-            display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
+            // Dibujar paredes SOLO si los portales están cerrados
+            if (!portals_open) {
+                display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true); 
+                display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true); 
+                display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
+                display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
+            }
             
             if (game_over) {
                 display_text(37, 20, "GAME OVER", false); 
-                
-                // Mostrar puntaje final
                 char final_score[16];
                 snprintf(final_score, sizeof(final_score), "Puntos: %d", score);
                 display_text(37, 36, final_score, false);
-
-            } else {
-                // Dibujar la Manzana (Cuerpo de 4x4, y apagamos 1x1 px en el medio para darle ese "punto")
+            } else if (snake_is_here) {
+                // Solo renderizar manzanas y jugador si están en esta placa
                 display_fill_rect(apple_x, apple_y, SQUARE_SIZE, SQUARE_SIZE, true); 
                 display_fill_rect(apple_x + 1, apple_y + 1, 1, 1, false); 
 
-                // Dibujar Cabeza del jugador
                 display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); 
-                
-                // Dibujar la Cola del jugador
                 for (int i = 0; i < score; i++) {
                     display_fill_rect(tail_x[i], tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);
                 }
-
-                // Imprimir el puntaje actual arriba a la izquierda
-                char score_str[16];
-                snprintf(score_str, sizeof(score_str), "Pts:%d", score);
-                display_text(4, 4, score_str, false);
+            } else {
+                // Feedback visual de que estás esperando
+                display_text(10, 28, "ESPERANDO A AMIGO", false);
             }
             
             display_flush(); 
