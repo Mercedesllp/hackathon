@@ -66,16 +66,20 @@ void app_main(void)
             if (ev.pressed) {
                 switch (ev.id) {
                     case BTN_UP:    
-                        if (dir_y == 0) { dir_x = 0; dir_y = -1; } 
-                        break;
-                    case BTN_DOWN:  
-                        if (dir_y == 0) { dir_x = 0; dir_y = 1; }  
-                        break;
-                    case BTN_LEFT:  
+                        // Físicamente es el botón IZQUIERDA
                         if (dir_x == 0) { dir_x = -1; dir_y = 0; } 
                         break;
                     case BTN_RIGHT: 
+                        // Físicamente es el botón ARRIBA
+                        if (dir_y == 0) { dir_x = 0; dir_y = -1; } 
+                        break;
+                    case BTN_DOWN:  
+                        // Físicamente es el botón DERECHA
                         if (dir_x == 0) { dir_x = 1; dir_y = 0; }  
+                        break;
+                    case BTN_LEFT:  
+                        // Físicamente es el botón ABAJO
+                        if (dir_y == 0) { dir_x = 0; dir_y = 1; } 
                         break;
                     default: 
                         break;
