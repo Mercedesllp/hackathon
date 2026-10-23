@@ -116,10 +116,10 @@ void check_walls(void) {
         if (game.portals_open) {
             game.snake_is_here = false;
             // TODO: ENVIAR DATOS (score, dir_x, dir_y, posición) POR I2C ACÁ
-            if (game.audio_ok) audio_play_tone(440, 150);[cite: 56, 57]
+            if (game.audio_ok) audio_play_tone(440, 150);
         } else {
             game.game_over = true; 
-            if (game.audio_ok) audio_play_tone(150, 400);[cite: 56, 57]
+            if (game.audio_ok) audio_play_tone(150, 400);
         }
     }
 }
@@ -127,7 +127,7 @@ void check_walls(void) {
 void check_apple_collision(void) {
     if (game.x == game.apple_x && game.y == game.apple_y) {
         if (game.score < MAX_TAIL) game.score++;
-        if (game.audio_ok) audio_play_tone(880, 50);[cite: 56, 57]
+        if (game.audio_ok) audio_play_tone(880, 50);
         game.apple_x = WALL_SIZE + (esp_random() % game.max_grid_x) * SQUARE_SIZE;
         game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
     }
@@ -148,7 +148,7 @@ void check_self_collision(void) {
     for (int i = 0; i < game.score; i++) {
         if (game.x == game.tail_x[i] && game.y == game.tail_y[i]) {
             game.game_over = true;
-            if (game.audio_ok) audio_play_tone(150, 400);[cite: 56, 57]
+            if (game.audio_ok) audio_play_tone(150, 400);
         }
     }
 }
@@ -156,31 +156,31 @@ void check_self_collision(void) {
 // -- FUNCIONES DE RENDERIZADO --
 
 void render_walls(void) {
-    display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true);[cite: 58, 63]
-    display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true);[cite: 58, 63]
-    display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true);[cite: 58, 63]
-    display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true);[cite: 58, 63]
+    display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true);
+    display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true);
+    display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true);
+    display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true);
 }
 
 void render_game_over(void) {
-    display_text(37, 20, "GAME OVER", false);[cite: 63]
+    display_text(37, 20, "GAME OVER", false);
     char final_score[16];
     snprintf(final_score, sizeof(final_score), "Puntos: %d", game.score);
-    display_text(37, 36, final_score, false);[cite: 63]
+    display_text(37, 36, final_score, false);
 }
 
 void render_snake_here(void) {
-    display_fill_rect(game.apple_x, game.apple_y, SQUARE_SIZE, SQUARE_SIZE, true);[cite: 63]
-    display_fill_rect(game.apple_x + 1, game.apple_y + 1, 1, 1, false);[cite: 63]
+    display_fill_rect(game.apple_x, game.apple_y, SQUARE_SIZE, SQUARE_SIZE, true);
+    display_fill_rect(game.apple_x + 1, game.apple_y + 1, 1, 1, false);
 
-    display_fill_rect(game.x, game.y, SQUARE_SIZE, SQUARE_SIZE, true);[cite: 63]
+    display_fill_rect(game.x, game.y, SQUARE_SIZE, SQUARE_SIZE, true);
     for (int i = 0; i < game.score; i++) {
-        display_fill_rect(game.tail_x[i], game.tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);[cite: 63]
+        display_fill_rect(game.tail_x[i], game.tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);
     }
 }
 
 void render_waiting(void) {
-    display_text(10, 28, "ESPERANDO A AMIGO", false);[cite: 63]
+    display_text(10, 28, "ESPERANDO A AMIGO", false);
 }
 
 // -- BUCLE PRINCIPAL --
@@ -189,19 +189,19 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "Hackathon board demo starting");
 
-    game.display_ok = display_init() == ESP_OK;[cite: 63]
-    ESP_ERROR_CHECK(buttons_init());[cite: 60]
+    game.display_ok = display_init() == ESP_OK;
+    ESP_ERROR_CHECK(buttons_init());
 
-    game.audio_ok = audio_init() == ESP_OK;[cite: 57]
+    game.audio_ok = audio_init() == ESP_OK;
     if (game.audio_ok) {
-        audio_play_tone(523, 120);[cite: 56, 57]
+        audio_play_tone(523, 120);
     }
 
-    QueueHandle_t events = buttons_event_queue();[cite: 60]
+    QueueHandle_t events = buttons_event_queue();
 
     // Inicializar variables calculadas
-    game.max_grid_x = (BOARD_LCD_WIDTH - 2 * WALL_SIZE) / SQUARE_SIZE;[cite: 58]
-    game.max_grid_y = (BOARD_LCD_HEIGHT - 2 * WALL_SIZE) / SQUARE_SIZE;[cite: 58]
+    game.max_grid_x = (BOARD_LCD_WIDTH - 2 * WALL_SIZE) / SQUARE_SIZE;
+    game.max_grid_y = (BOARD_LCD_HEIGHT - 2 * WALL_SIZE) / SQUARE_SIZE;
     reset_game();
 
     TickType_t last_wake_time = xTaskGetTickCount();
@@ -238,7 +238,7 @@ void app_main(void)
 
         // Renderizado Orquestado
         if (game.display_ok) {
-            display_clear();[cite: 63]
+            display_clear();
             
             if (!game.portals_open) {
                 render_walls();
@@ -252,7 +252,7 @@ void app_main(void)
                 render_waiting();
             }
             
-            display_flush();[cite: 63]
+            display_flush();
         }
 
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
