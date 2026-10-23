@@ -46,6 +46,7 @@ void app_main(void)
 
     // --- ESTADO INICIAL DEL JUEGO ---
     const int SQUARE_SIZE = 4;
+    const int WALL_SIZE = 1;
     int square_x = BOARD_LCD_WIDTH / 2;  //[cite: 58]
     int square_y = BOARD_LCD_HEIGHT / 2; //[cite: 58]
     
@@ -112,13 +113,13 @@ void app_main(void)
             
             // --- DIBUJAR PAREDES ---
             // Pared superior
-            display_fill_rect(0, 0, BOARD_LCD_WIDTH, SQUARE_SIZE, true); //[cite: 63]
+            display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true); //[cite: 63]
             // Pared inferior
-            display_fill_rect(0, BOARD_LCD_HEIGHT - SQUARE_SIZE, BOARD_LCD_WIDTH, SQUARE_SIZE, true); //[cite: 63]
+            display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true); //[cite: 63]
             // Pared izquierda
-            display_fill_rect(0, 0, SQUARE_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
+            display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
             // Pared derecha
-            display_fill_rect(BOARD_LCD_WIDTH - SQUARE_SIZE, 0, SQUARE_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
+            display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
             
             if (game_over) {
                 // Mensaje centrado
