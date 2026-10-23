@@ -54,7 +54,7 @@ void app_main(void)
     int dir_y = 0;
 
     // Frecuencia de actualizacion del juego (100ms = 10 FPS)
-    const int GAME_SPEED_MS = 100;
+    const int GAME_SPEED_MS = 200;
     TickType_t last_wake_time = xTaskGetTickCount();
 
     // UN SOLO BUCLE PRINCIPAL
