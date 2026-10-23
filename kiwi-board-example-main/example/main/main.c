@@ -98,9 +98,10 @@ void app_main(void)
             square_x += dir_x * SQUARE_SIZE;
             square_y += dir_y * SQUARE_SIZE;
 
-            // Colisiones contra las paredes usando los tamaños de board.h[cite: 58]
-            if (square_x >= BOARD_LCD_WIDTH || square_x < 0 || 
-                square_y >= BOARD_LCD_HEIGHT || square_y < 0) {
+            // Colisiones contra las paredes (ajustadas al grosor de la pared)
+            // BOARD_LCD_WIDTH es 128 y BOARD_LCD_HEIGHT es 64[cite: 58]
+            if (square_x >= BOARD_LCD_WIDTH - SQUARE_SIZE || square_x < SQUARE_SIZE || 
+                square_y >= BOARD_LCD_HEIGHT - SQUARE_SIZE || square_y < SQUARE_SIZE) {
                 game_over = true;
             }
         }
@@ -109,10 +110,21 @@ void app_main(void)
         if (display_ok) {
             display_clear(); //[cite: 63]
             
+            // --- DIBUJAR PAREDES ---
+            // Pared superior
+            display_fill_rect(0, 0, BOARD_LCD_WIDTH, SQUARE_SIZE, true); //[cite: 63]
+            // Pared inferior
+            display_fill_rect(0, BOARD_LCD_HEIGHT - SQUARE_SIZE, BOARD_LCD_WIDTH, SQUARE_SIZE, true); //[cite: 63]
+            // Pared izquierda
+            display_fill_rect(0, 0, SQUARE_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
+            // Pared derecha
+            display_fill_rect(BOARD_LCD_WIDTH - SQUARE_SIZE, 0, SQUARE_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 63]
+            
             if (game_over) {
-                // Centrado a ojo (128 pixeles de ancho, el texto ocupa ~54)
+                // Mensaje centrado
                 display_text(37, 28, "GAME OVER", false); //[cite: 63]
             } else {
+                // Dibujar el jugador
                 display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); //[cite: 63]
             }
             
