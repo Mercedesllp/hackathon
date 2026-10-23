@@ -78,7 +78,13 @@ void app_main(void)
     while (1) {
         button_event_t ev;
         
-        // Leer inputs
+        // Contadores de votos para este fotograma
+        int votos_arriba = 0;
+        int votos_abajo = 0;
+        int votos_izq = 0;
+        int votos_der = 0;
+        
+        // 1. LEER TODOS LOS INPUTS DEL FRAME
         while (xQueueReceive(events, &ev, 0) == pdTRUE) {
             if (ev.pressed) {
                 if (game_over) {
@@ -92,50 +98,57 @@ void app_main(void)
                     apple_y = WALL_SIZE + (esp_random() % max_grid_y) * SQUARE_SIZE;
                     game_over = false;
                 } else {
-                    // Mantenemos tu arreglo del joystick rotado intacto
+                    // Sumar votos según el botón presionado
                     switch (ev.id) {
-                        // --- CONTROLES CON EL JOYSTICK ---
-                        case BTN_UP:    
-                            if (dir_x == 0) { dir_x = -1; dir_y = 0; } 
-                            break;
-                        case BTN_RIGHT: 
-                            if (dir_y == 0) { dir_x = 0; dir_y = -1; } 
-                            break;
-                        case BTN_DOWN:  
-                            if (dir_x == 0) { dir_x = 1; dir_y = 0; }  
-                            break;
-                        case BTN_LEFT:  
-                            if (dir_y == 0) { dir_x = 0; dir_y = 1; } 
-                            break;
+                        // --- CONTROLES CON EL JOYSTICK ROTADO ---
+                        case BTN_UP:    votos_izq++; break;
+                        case BTN_RIGHT: votos_arriba++; break;
+                        case BTN_DOWN:  votos_der++; break;
+                        case BTN_LEFT:  votos_abajo++; break;
 
-                        // --- CONTROLES CON LOS 4 BOTONES ---
-                        // Asignamos las teclas auxiliares para jugar. 
-                        // Intercambiá los BTN_KEY si el orden físico de la placa no coincide.
-                        
-                        case BTN_KEY4: // Botón de arriba
-                            if (dir_x == 0) { dir_x = 0; dir_y = -1; }
-                            break;
-                            
-                        case BTN_KEY1: // Botón inferior izquierdo
-                            if (dir_y == 0) { dir_x = -1; dir_y = 0; }
-                            break;
-                            
-                        case BTN_KEY2: // Botón inferior central
-                            if (dir_y == 0) { dir_x = 0; dir_y = 1; }
-                            break;
-                            
-                        case BTN_KEY3: // Botón inferior derecho
-                            if (dir_y == 0) { dir_x = 1; dir_y = 0; }
-                            break;
-
-                        default: 
-                            break;
+                        // --- CONTROLES CON LOS BOTONES EXTRA ---
+                        case BTN_KEY4:  votos_arriba++; break;
+                        case BTN_KEY1:  votos_izq++; break;
+                        case BTN_KEY2:  votos_abajo++; break;
+                        case BTN_KEY3:  votos_der++; break;
+                        default: break;
                     }
                 }
             }
         }
 
+        // 2. PROCESAR EL RESULTADO DE LA VOTACIÓN
         if (!game_over) {
+            // --- RESOLUCIÓN DE LA VOTACIÓN DE INPUTS ---
+            int max_votos = 0;
+            int nuevo_dir_x = dir_x;
+            int nuevo_dir_y = dir_y;
+
+            // Evaluamos al ganador descartando movimientos inválidos (180 grados)
+            if (votos_arriba > max_votos && dir_y == 0) {
+                max_votos = votos_arriba;
+                nuevo_dir_x = 0; nuevo_dir_y = -1;
+            }
+            if (votos_abajo > max_votos && dir_y == 0) {
+                max_votos = votos_abajo;
+                nuevo_dir_x = 0; nuevo_dir_y = 1;
+            }
+            if (votos_izq > max_votos && dir_x == 0) {
+                max_votos = votos_izq;
+                nuevo_dir_x = -1; nuevo_dir_y = 0;
+            }
+            if (votos_der > max_votos && dir_x == 0) {
+                max_votos = votos_der;
+                nuevo_dir_x = 1; nuevo_dir_y = 0;
+            }
+
+            // Aplicar la dirección ganadora (si hubo al menos un voto válido)
+            if (max_votos > 0) {
+                dir_x = nuevo_dir_x;
+                dir_y = nuevo_dir_y;
+            }
+            // -------------------------------------------
+
             // 1. Guardar la posición anterior para mover la cola
             int prev_x = square_x;
             int prev_y = square_y;
