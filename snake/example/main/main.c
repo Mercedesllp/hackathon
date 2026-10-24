@@ -266,11 +266,37 @@ static void check_walls(void)
         return; // dentro del tablero
     }
 
-    if (game.portals_open) {
+    // --- LÓGICA DE COLISIÓN FÍSICA PRECISA ---
+    // Calculamos dónde están las paredes físicamente en este fotograma
+    int w = BOARD_LCD_WIDTH;
+    int h = BOARD_LCD_HEIGHT;
+    int step = game.wall_anim_step;
+    
+    if (step > w / 2) step = w / 2;
+
+    int horiz_w = (w / 2) - step;
+    int vert_h = (h / 2) - (step / 2);
+
+    bool choca_pared = false;
+
+    if (gx < 0 || gx >= game.max_grid_x) {
+        // Salió por izquierda o derecha: chequeamos su 'y' contra el muro superior e inferior
+        // Sumamos SQUARE_SIZE para considerar toda la cabeza, no solo el puntito de origen
+        if (game.y < vert_h || (game.y + SQUARE_SIZE) > (h / 2) + (step / 2)) {
+            choca_pared = true;
+        }
+    } else if (gy < 0 || gy >= game.max_grid_y) {
+        // Salió por arriba o abajo: chequeamos su 'x' contra el muro izquierdo y derecho
+        if (game.x < horiz_w || (game.x + SQUARE_SIZE) > (w / 2) + step) {
+            choca_pared = true;
+        }
+    }
+
+    if (!choca_pared) {
+        // ¡Pasó limpiamente por el hueco!
         if (game.is_multiplayer) {
             game.snake_is_here = false; // Se va a la otra placa
             
-            // --- ENVÍO DE DATOS A LA OTRA PLACA ---
             message_t mensaje = {
                 .x = gx,
                 .y = gy,
@@ -290,6 +316,7 @@ static void check_walls(void)
             if (game.audio_ok) wifi_audio_play_tone(660, 150);
         }
     } else {
+        // Chocó contra la pared (ya sea cerrada, abriéndose o cerrándose)
         game.game_over = true;
         if (game.audio_ok) wifi_audio_play_tone(150, 400);
     }
