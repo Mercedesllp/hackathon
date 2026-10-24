@@ -133,6 +133,8 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
     TickType_t last_wake_time = xTaskGetTickCount();
 
     button_id_t held_btn = 0;
+    bool is_held = false;
+
     while (!back_to_menu) {
         button_event_t ev;
         snake_clear_votes(&s_game);
