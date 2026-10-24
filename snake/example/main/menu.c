@@ -76,9 +76,9 @@ esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_
     
     while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
 
-    const int notes[] = {196, 220, 262, 220}; 
-    const int note_duration = 250; 
-    int num_notes = 4;
+    const int notes[] = {262, 294, 330, 392, 440, 392, 330, 294}; 
+    const int note_duration = 380; // Más pausada para que no sature
+    int num_notes = 8;
     int note_idx = 0;
     
     int time_to_blink = 0; 

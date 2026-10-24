@@ -81,6 +81,56 @@ void sounds_play_tone(int freq_hz, int ms) {
     }
 }
 
+// --- MELODÍAS Y EFECTOS DE SONIDO ---
+
+void sounds_play_eat(void) {
+    sounds_play_tone(660, 50);
+}
+
+void sounds_play_wall_drop(void) {
+    sounds_play_tone(990, 80);
+}
+
+void sounds_play_wall_received(void) {
+    sounds_play_tone(330, 100);
+}
+
+void sounds_play_puzzle_start(void) {
+    sounds_play_tone(523, 80);
+}
+
+// Melodía alegre y ascendente al ganar un bloque/puzle
+void sounds_play_puzzle_win(void) {
+    sounds_play_tone(523, 70); // Do
+    sounds_play_tone(659, 70); // Mi
+    sounds_play_tone(784, 70); // Sol
+    sounds_play_tone(1046, 150); // Do alto
+}
+
+// Sonido triste al errar un puzle
+void sounds_play_puzzle_lose(void) {
+    sounds_play_tone(300, 120);
+    sounds_play_tone(220, 200);
+}
+
+// Melodía descendente y dramática para Game Over global
+void sounds_play_game_over(void) {
+    sounds_play_tone(440, 120);
+    sounds_play_tone(370, 120);
+    sounds_play_tone(311, 150);
+    sounds_play_tone(220, 300);
+}
+
+// Fanfarria triunfal para la Victoria global (Multijugador)
+void sounds_play_victory(void) {
+    sounds_play_tone(523, 100); // Do
+    sounds_play_tone(659, 100); // Mi
+    sounds_play_tone(784, 100); // Sol
+    sounds_play_tone(1046, 250); // Do alto (sostenido)
+    sounds_play_tone(784, 100);  // Sol
+    sounds_play_tone(1046, 400); // Do alto final triunfal
+}
+
 static bool wifi_audio_init(void) {
     esp_log_level_set("wifi", ESP_LOG_ERROR);
     esp_err_t err = nvs_flash_init();

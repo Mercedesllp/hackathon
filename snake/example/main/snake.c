@@ -51,6 +51,8 @@ void snake_reset_game(GameState *g, bool is_multiplayer, bool starts_with_snake)
     g->apples_eaten_here = 0;
     g->cola_visible = 0;
 
+    g->lives = 3;
+
     g->game_over = false;
     g->game_over_notified = false;
     g->portals_open = false;
@@ -106,6 +108,24 @@ static void resolve_new_direction(GameState *g) {
     }
 }
 
+static void snake_handle_crash(GameState *g) {
+    g->lives--;
+    if (g->lives > 0) {
+        // Perdió una vida pero sigue en juego: reubicamos al centro con pasos seguros
+        g->x = WALL_SIZE + (g->max_grid_x / 2) * SQUARE_SIZE;
+        g->y = WALL_SIZE + (g->max_grid_y / 2) * SQUARE_SIZE;
+        g->dir_x = 1;
+        g->dir_y = 0;
+        g->cola_visible = 0;     // Limpiamos la cola para evitar choques instantáneos
+        g->entry_steps_left = 15; // Pasos de gracia (inmunidad temporal al reaparecer)
+        if (g->audio_ok) wifi_audio_play_tone(200, 250); // Sonido de pérdida de vida
+    } else {
+        // Se acabaron las vidas -> Game Over real
+        g->game_over = true;
+        if (g->audio_ok) wifi_audio_play_tone(150, 400);
+    }
+}
+
 static void check_walls(GameState *g) {
     int gx = (g->x - WALL_SIZE) / SQUARE_SIZE;
     int gy = (g->y - WALL_SIZE) / SQUARE_SIZE;
@@ -146,7 +166,7 @@ static void check_walls(GameState *g) {
             if (g->audio_ok) wifi_audio_play_tone(440, 150); 
         }
     } else {
-        g->game_over = true;
+        snake_handle_crash(g);
         if (g->audio_ok) wifi_audio_play_tone(150, 400);
     }
 }
@@ -181,8 +201,7 @@ void snake_step(GameState *g) {
         int gx = (g->x - WALL_SIZE) / SQUARE_SIZE;
         int gy = (g->y - WALL_SIZE) / SQUARE_SIZE;
         if (walls_hit(gx, gy)) {
-            g->game_over = true;
-            if (g->audio_ok) wifi_audio_play_tone(150, 400);
+            snake_handle_crash(g);
         }
     }
 
@@ -209,8 +228,7 @@ void snake_step(GameState *g) {
         // Colisión consigo misma
         for (int i = 0; i < g->cola_visible; i++) {
             if (g->x == g->tail_x[i] && g->y == g->tail_y[i]) {
-                g->game_over = true;
-                if (g->audio_ok) wifi_audio_play_tone(150, 400);
+                snake_handle_crash(g);
                 break;
             }
         }
@@ -265,6 +283,11 @@ void snake_render_here(const GameState *g) {
     for (int i = 0; i < g->cola_visible; i++) {
         display_fill_rect(g->tail_x[i], g->tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);
     }
+
+    // --- INDICADOR DE VIDAS ---
+    char lives_buf[12];
+    snprintf(lives_buf, sizeof(lives_buf), "V:%d", g->lives);
+    display_text(2, 55, lives_buf, false);
 }
 
 void snake_render_game_over(const GameState *g) {
