@@ -43,14 +43,14 @@ typedef struct {
     int x, y;
     int dir_x, dir_y;
     int score;        
-    int apples_eaten_here; // <--- Contador independiente para la placa actual
+    int apples_eaten_here;
     int cola_visible; 
     int tail_x[MAX_TAIL];
     int tail_y[MAX_TAIL];
     int apple_x, apple_y;
 
     bool game_over;
-    bool game_over_notified;
+    bool game_over_notified; // <--- NUEVO: Para no mandar la muerte mil veces
     
     bool snake_is_here;
     bool portals_open;
@@ -92,6 +92,7 @@ typedef struct {
     int rotation;           
     TickType_t last_grant;  
     
+    // Historial del mapa adversario
     struct {
         int x, y;
         shape_id_t shape;
@@ -195,16 +196,14 @@ static void reset_game(void) {
     game.y = WALL_SIZE + (game.max_grid_y / 2) * SQUARE_SIZE;
     game.dir_x = 1;
     game.dir_y = 0;
-    
     game.score = 0;
-    game.apples_eaten_here = 0; // Se resetea al empezar
-    
+    game.apples_eaten_here = 0;
     game.cola_visible = 0;
     game.apple_x = WALL_SIZE + (esp_random() % game.max_grid_x) * SQUARE_SIZE;
     game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
     
     game.game_over = false;
-    game.game_over_notified = false; 
+    game.game_over_notified = false; // Reset de la notificación
     
     game.portals_open = false;
     game.wall_anim_step = 0;
@@ -271,4 +270,459 @@ static void idle_handle_button(button_id_t id) {
 
 static void process_inputs(QueueHandle_t events, bool *back_to_menu) {
     button_event_t ev;
-    game.votos_arriba = 0; game.votos_abajo = 0
+    game.votos_arriba = 0; game.votos_abajo = 0; game.votos_izq = 0; game.votos_der = 0;
+
+    while (xQueueReceive(events, &ev, 0) == pdTRUE) {
+        if (!ev.pressed) continue;
+        if (game.game_over) { *back_to_menu = true; continue; }
+
+        if (game.is_multiplayer && !game.snake_is_here && ev.id != BTN_KEY1) {
+            idle_handle_button(ev.id);
+            continue;
+        }
+
+        switch (ev.id) {
+            case BTN_UP:    game.votos_izq++;    break;
+            case BTN_RIGHT: game.votos_arriba++; break;
+            case BTN_DOWN:  game.votos_der++;    break;
+            case BTN_LEFT:  game.votos_abajo++;  break;
+            case BTN_KEY1:
+                if (!game.is_multiplayer) {
+                    if (menu_pause(events, game.display_ok, game.audio_ok) == PAUSE_QUIT) {
+                        *back_to_menu = true;
+                    }
+                }
+                break;
+            case BTN_KEY4:
+                if (!game.is_multiplayer) {
+                    walls_add(esp_random() % NUM_SHAPES, esp_random() % NUM_ROTATIONS, esp_random() % game.max_grid_x, esp_random() % game.max_grid_y);
+                }
+                break;
+            default: break;
+        }
+    }
+}
+
+static void resolve_new_direction(void) {
+    int max_votos = 0;
+    int nuevo_dir_x = game.dir_x; int nuevo_dir_y = game.dir_y;
+
+    if (game.votos_arriba > max_votos && game.dir_y == 0) { max_votos = game.votos_arriba; nuevo_dir_x = 0;  nuevo_dir_y = -1; }
+    if (game.votos_abajo  > max_votos && game.dir_y == 0) { max_votos = game.votos_abajo;  nuevo_dir_x = 0;  nuevo_dir_y = 1;  }
+    if (game.votos_izq    > max_votos && game.dir_x == 0) { max_votos = game.votos_izq;    nuevo_dir_x = -1; nuevo_dir_y = 0;  }
+    if (game.votos_der    > max_votos && game.dir_x == 0) { max_votos = game.votos_der;    nuevo_dir_x = 1;  nuevo_dir_y = 0;  }
+
+    if (max_votos > 0) { game.dir_x = nuevo_dir_x; game.dir_y = nuevo_dir_y; }
+}
+
+static void check_walls(void) {
+    int gx = (game.x - WALL_SIZE) / SQUARE_SIZE;
+    int gy = (game.y - WALL_SIZE) / SQUARE_SIZE;
+
+    if (game.x < WALL_SIZE) gx = -1;
+    if (game.y < WALL_SIZE) gy = -1;
+    if (gx >= 0 && gx < game.max_grid_x && gy >= 0 && gy < game.max_grid_y) return;
+
+    int w = BOARD_LCD_WIDTH, h = BOARD_LCD_HEIGHT, step = game.wall_anim_step;
+    if (step > w / 2) step = w / 2;
+
+    int horiz_w = (w / 2) - step, vert_h = (h / 2) - (step / 2);
+    bool choca_pared = false;
+
+    if (gx < 0 || gx >= game.max_grid_x) {
+        if (game.y < vert_h || (game.y + SQUARE_SIZE) > (h / 2) + (step / 2)) choca_pared = true;
+    } else if (gy < 0 || gy >= game.max_grid_y) {
+        if (game.x < horiz_w || (game.x + SQUARE_SIZE) > (w / 2) + step) choca_pared = true;
+    }
+    
+    if (game.entry_steps_left > 0) choca_pared = false;
+
+    if (!choca_pared) {
+        if (game.is_multiplayer) {
+            game.snake_is_here = false; 
+            message_t mensaje = { .type = MSG_SNAKE, .x = gx, .y = gy, .score = game.score };
+            radio_send(&mensaje);
+            if (game.audio_ok) wifi_audio_play_tone(440, 150);
+        } else {
+            game.in_wall_menu = true;
+            game.apples_eaten_here = 0;
+            if (gx < 0) game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
+            else if (gx >= game.max_grid_x) game.x = WALL_SIZE;
+            if (gy < 0) game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
+            else if (gy >= game.max_grid_y) game.y = WALL_SIZE;
+            if (game.audio_ok) wifi_audio_play_tone(440, 150); 
+        }
+    } else {
+        game.game_over = true;
+        if (game.audio_ok) wifi_audio_play_tone(150, 400);
+    }
+}
+
+static void place_apple(void) {
+    int gx, gy, intentos = 0;
+    do {
+        gx = esp_random() % game.max_grid_x;
+        gy = esp_random() % game.max_grid_y;
+    } while (walls_hit(gx, gy) && ++intentos < 100);
+    game.apple_x = WALL_SIZE + gx * SQUARE_SIZE;
+    game.apple_y = WALL_SIZE + gy * SQUARE_SIZE;
+}
+
+static void check_apple_collision(void) {
+    if (game.x == game.apple_x && game.y == game.apple_y) {
+        if (game.score < MAX_TAIL) game.score++;
+        game.apples_eaten_here++; 
+        if (game.audio_ok) wifi_audio_play_tone(880, 50);
+        place_apple();
+    }
+}
+
+static void receive_messages(void) {
+    message_t m;
+    while (radio_receive(&m)) {
+        switch (m.type) {
+            case MSG_SNAKE:
+                if (!game.snake_is_here && snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
+                    game.snake_is_here = true;
+                    game.score = m.score;
+                    game.apples_eaten_here = 0;
+                    game.cola_visible = 0;
+
+                    game.entry_steps_left = game.score + 2; 
+                    game.entry_door_x = game.x;
+                    game.entry_door_y = game.y;
+                    game.entry_dir_x = game.dir_x;
+                    game.entry_dir_y = game.dir_y;
+                    game.wall_anim_step = 0;
+
+                    if (game.audio_ok) wifi_audio_play_tone(660, 150);
+                }
+                break;
+            case MSG_WALL:
+                if (m.shape < NUM_SHAPES) {
+                    walls_add(m.shape, m.rotation, m.x, m.y);
+                    if (game.audio_ok) wifi_audio_play_tone(330, 100);
+                }
+                break;
+            case MSG_GAME_OVER:
+                // --- NUEVO: RECIBIMOS LA MUERTE DEL OTRO ---
+                game.game_over = true;
+                game.game_over_notified = true; // Para no devolverle el mensaje
+                if (game.audio_ok) wifi_audio_play_tone(150, 400);
+                break;
+            default: break;
+        }
+    }
+}
+
+static void update_tail_positions(int prev_x, int prev_y) {
+    if (game.cola_visible < game.score) game.cola_visible++;
+    for (int i = game.cola_visible - 1; i > 0; i--) {
+        game.tail_x[i] = game.tail_x[i - 1];
+        game.tail_y[i] = game.tail_y[i - 1];
+    }
+    if (game.cola_visible > 0) {
+        game.tail_x[0] = prev_x;
+        game.tail_y[0] = prev_y;
+    }
+}
+
+static void check_self_collision(void) {
+    for (int i = 0; i < game.cola_visible; i++) {
+        if (game.x == game.tail_x[i] && game.y == game.tail_y[i]) {
+            game.game_over = true;
+            if (game.audio_ok) wifi_audio_play_tone(150, 400);
+            return;
+        }
+    }
+}
+
+static bool snake_on_cell(int gx, int gy) {
+    if (!game.snake_is_here) return false;
+    int px = WALL_SIZE + gx * SQUARE_SIZE, py = WALL_SIZE + gy * SQUARE_SIZE;
+    if (game.x == px && game.y == py) return true;
+    for (int i = 0; i < game.cola_visible; i++) {
+        if (game.tail_x[i] == px && game.tail_y[i] == py) return true;
+    }
+    return false;
+}
+
+static void check_wall_collision(void) {
+    int gx = (game.x - WALL_SIZE) / SQUARE_SIZE;
+    int gy = (game.y - WALL_SIZE) / SQUARE_SIZE;
+    if (walls_hit(gx, gy)) {
+        game.game_over = true;
+        if (game.audio_ok) wifi_audio_play_tone(150, 400);
+    }
+}
+
+static void render_walls(void) {
+    int w = BOARD_LCD_WIDTH, h = BOARD_LCD_HEIGHT, step = game.wall_anim_step;
+    if (step > w / 2) step = w / 2;
+
+    int horiz_w = (w / 2) - step, vert_h = (h / 2) - (step / 2);
+
+    if (horiz_w > 0) {
+        display_fill_rect(0, 0, horiz_w, WALL_SIZE, true);
+        display_fill_rect((w / 2) + step, 0, horiz_w, WALL_SIZE, true);
+        display_fill_rect(0, h - WALL_SIZE, horiz_w, WALL_SIZE, true);
+        display_fill_rect((w / 2) + step, h - WALL_SIZE, horiz_w, WALL_SIZE, true);
+    }
+    if (vert_h > 0) {
+        display_fill_rect(0, 0, WALL_SIZE, vert_h, true);
+        display_fill_rect(0, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
+        display_fill_rect(w - WALL_SIZE, 0, WALL_SIZE, vert_h, true);
+        display_fill_rect(w - WALL_SIZE, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
+    }
+    
+    if (game.entry_steps_left > 0) {
+        int hole_x = game.entry_door_x;
+        int hole_y = game.entry_door_y;
+        int hole_w = SQUARE_SIZE;
+        int hole_h = SQUARE_SIZE;
+
+        if (game.entry_dir_x != 0) { 
+            hole_w = WALL_SIZE;
+            if (game.entry_dir_x == 1) hole_x = 0; 
+            else hole_x = w - WALL_SIZE;           
+        } else { 
+            hole_h = WALL_SIZE;
+            if (game.entry_dir_y == 1) hole_y = 0; 
+            else hole_y = h - WALL_SIZE;           
+        }
+        
+        display_fill_rect(hole_x, hole_y, hole_w, hole_h, false); 
+    }
+}
+
+static void render_game_over(void) {
+    display_text(37, 20, "GAME OVER", false);
+    char final_score[16];
+    snprintf(final_score, sizeof(final_score), "Puntos: %d", game.score);
+    display_text(37, 36, final_score, false);
+}
+
+static void render_snake_here(void) {
+    display_fill_rect(game.apple_x, game.apple_y, SQUARE_SIZE, SQUARE_SIZE, true);
+    display_fill_rect(game.apple_x + 1, game.apple_y + 1, 1, 1, false);
+    display_fill_rect(game.x, game.y, SQUARE_SIZE, SQUARE_SIZE, true);
+    for (int i = 0; i < game.cola_visible; i++) {
+        display_fill_rect(game.tail_x[i], game.tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);
+    }
+}
+
+static void render_idle(void) {
+    int8_t cells[CELLS_PER_SHAPE][2];
+    char hud[16];
+    snprintf(hud, sizeof(hud), "Piezas:%d", walls_pieces());
+    display_text(3, 3, hud, false);
+
+    walls_shape_cells(idle.next, 0, cells);
+    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+        display_fill_rect(118 + cells[i][0] * 2, 5 + cells[i][1] * 2, 2, 2, true);
+    }
+
+    for (int w = 0; w < idle.adv_walls_count; w++) {
+        walls_shape_cells(idle.adv_walls[w].shape, idle.adv_walls[w].rotation, cells);
+        for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+            int gx = idle.adv_walls[w].x + cells[i][0];
+            int gy = idle.adv_walls[w].y + cells[i][1];
+            if (gx < 0 || gx >= game.max_grid_x || gy < 0 || gy >= game.max_grid_y) continue;
+            
+            display_draw_rect(WALL_SIZE + gx * SQUARE_SIZE, WALL_SIZE + gy * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
+        }
+    }
+
+    bool can_drop = walls_pieces() > 0;
+    walls_shape_cells(idle.piece, idle.rotation, cells);
+    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+        int gx = idle.cursor_x + cells[i][0];
+        int gy = idle.cursor_y + cells[i][1];
+        if (gx < 0 || gx >= game.max_grid_x || gy < 0 || gy >= game.max_grid_y) continue;
+        
+        int px = WALL_SIZE + gx * SQUARE_SIZE;
+        int py = WALL_SIZE + gy * SQUARE_SIZE;
+        if (can_drop) {
+            display_fill_rect(px, py, SQUARE_SIZE, SQUARE_SIZE, true);
+        } else {
+            display_draw_rect(px, py, SQUARE_SIZE, SQUARE_SIZE);
+            display_fill_rect(px + 1, py + 1, SQUARE_SIZE - 2, SQUARE_SIZE - 2, false);
+        }
+    }
+}
+
+// -- BUCLE PRINCIPAL --
+
+void app_main(void) {
+    ESP_LOGI(TAG, "Hackathon board demo starting");
+
+    game.display_ok = display_init() == ESP_OK;
+    ESP_ERROR_CHECK(buttons_init());
+    game.audio_ok = wifi_audio_init();
+
+    bool radio_ok = radio_init() == ESP_OK;
+    if (!radio_ok) ESP_LOGE(TAG, "Fallo al iniciar la radio");
+
+    if (game.audio_ok) wifi_audio_play_tone(523, 120);
+    QueueHandle_t events = buttons_event_queue();
+
+    game.max_grid_x = (BOARD_LCD_WIDTH - 2 * WALL_SIZE) / SQUARE_SIZE;
+    game.max_grid_y = (BOARD_LCD_HEIGHT - 2 * WALL_SIZE) / SQUARE_SIZE;
+
+    while (1) {
+        int selected_mode = 1;
+        ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok, game.audio_ok, &selected_mode));
+        game.is_multiplayer = (selected_mode == 2);
+        bool back_to_menu = false;
+
+        if (game.is_multiplayer) {
+            bool amigo_encontrado = false;
+            
+            if (game.display_ok) {
+                display_clear();
+                display_text(10, 28, "BUSCANDO AMIGO...", false);
+                display_text(10, 44, "(Btn 1 para salir)", false);
+                display_flush();
+            }
+
+            message_t basura;
+            while (radio_receive(&basura)) {}
+            button_event_t ev_basura;
+            while (xQueueReceive(events, &ev_basura, 0)) {}
+
+            TickType_t ultimo_aviso = 0;
+            int mi_ticket = esp_random() % 10000;
+
+            while (!amigo_encontrado && !back_to_menu) {
+                if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
+                    message_t msg_ready = { .type = MSG_READY, .score = mi_ticket };
+                    radio_send(&msg_ready);
+                    ultimo_aviso = xTaskGetTickCount();
+                }
+
+                message_t msg_in;
+                if (radio_receive(&msg_in)) {
+                    if (msg_in.type == MSG_READY) {
+                        if (mi_ticket == msg_in.score) {
+                            mi_ticket = esp_random() % 10000;
+                            continue;
+                        }
+
+                        amigo_encontrado = true;
+                        empieza_con_serpiente = (mi_ticket > msg_in.score);
+                        if (game.audio_ok) wifi_audio_play_tone(1046, 200);
+                        
+                        for (int i=0; i<3; i++) {
+                            message_t msg_ready_confirm = { .type = MSG_READY, .score = mi_ticket };
+                            radio_send(&msg_ready_confirm);
+                            vTaskDelay(pdMS_TO_TICKS(50));
+                        }
+                    }
+                }
+
+                button_event_t ev;
+                if (xQueueReceive(events, &ev, pdMS_TO_TICKS(50)) == pdTRUE) {
+                    if (ev.pressed && ev.id == BTN_KEY1) back_to_menu = true;
+                }
+            }
+
+            if (back_to_menu) continue; 
+        }
+
+        reset_game();
+        TickType_t last_wake_time = xTaskGetTickCount();
+
+        while (!back_to_menu) {
+            process_inputs(events, &back_to_menu);
+
+            if (game.in_wall_menu) {
+                int nueva_pared_x, nueva_pared_y;
+                bool nueva_pared_vert;
+
+                menu_place_wall(events, game.display_ok, game.audio_ok, 
+                                &nueva_pared_x, &nueva_pared_y, &nueva_pared_vert);
+                game.in_wall_menu = false;
+                
+                game.entry_steps_left = game.score + 1; 
+                game.entry_door_x = game.x;
+                game.entry_door_y = game.y;
+                game.entry_dir_x = game.dir_x;
+                game.entry_dir_y = game.dir_y;
+                game.wall_anim_step = 0;
+                
+                if (game.audio_ok) wifi_audio_play_tone(660, 150);
+                last_wake_time = xTaskGetTickCount();
+                continue; 
+            }
+
+            if (!game.game_over) {
+                receive_messages();
+                walls_update(snake_on_cell);
+
+                if (game.entry_steps_left > 0) {
+                    game.portals_open = false;
+                } else {
+                    game.portals_open = ((game.apples_eaten_here % 3) == 2);
+                }
+
+                if (game.portals_open) {
+                    if (game.wall_anim_step < 128) game.wall_anim_step += 16;
+                } else {
+                    if (game.wall_anim_step > 0) game.wall_anim_step -= 16;
+                }
+
+                if (game.snake_is_here) {
+                    resolve_new_direction();
+                    int prev_x = game.x;
+                    int prev_y = game.y;
+
+                    game.x += game.dir_x * SQUARE_SIZE;
+                    game.y += game.dir_y * SQUARE_SIZE;
+                    
+                    if (game.entry_steps_left > 0) game.entry_steps_left--;
+
+                    check_walls();
+
+                    if (!game.game_over && game.snake_is_here) {
+                        check_wall_collision();
+                    }
+                    if (!game.game_over && game.snake_is_here) {
+                        check_apple_collision();
+                        update_tail_positions(prev_x, prev_y);
+                        check_self_collision();
+                    }
+                } else {
+                    if (xTaskGetTickCount() - idle.last_grant >= pdMS_TO_TICKS(PIECE_GRANT_MS)) {
+                        walls_grant_piece();
+                        idle.last_grant = xTaskGetTickCount();
+                    }
+                }
+            }
+
+            // --- NUEVO: AVISAR MUERTE A LA OTRA PLACA ---
+            if (game.game_over && !game.game_over_notified) {
+                game.game_over_notified = true;
+                if (game.is_multiplayer) {
+                    message_t msg_muerte = { .type = MSG_GAME_OVER };
+                    radio_send(&msg_muerte);
+                }
+            }
+
+            if (game.display_ok && !game.in_wall_menu) {
+                display_clear();
+                render_walls();
+
+                if (game.game_over) {
+                    render_game_over();
+                } else if (game.snake_is_here) {
+                    walls_render();
+                    render_snake_here();
+                } else {
+                    render_idle();
+                }
+                display_flush();
+            }
+            vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
+        }
+    }
+}
