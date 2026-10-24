@@ -409,7 +409,7 @@ void app_main(void)
         int selected_mode = 1;
         ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok, game.audio_ok, &selected_mode));
 
-        game.is_multiplayer = (selected_mode == 2);  
+        game.is_multiplayer = (selected_mode == 2);
         bool back_to_menu = false;
 
         // --- SALA DE ESPERA MULTIJUGADOR ---
@@ -432,9 +432,9 @@ void app_main(void)
             TickType_t ultimo_aviso = 0;
 
             while (!amigo_encontrado && !back_to_menu) {
-                // 1. Gritar "Estoy listo" cada 300ms
+                // 1. Gritar "Estoy listo" cada 300ms (usamos 127 porque es el límite de 8 bits)
                 if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
-                    message_t msg_ready = { .x = 9999, .y = 9999, .score = 0 };
+                    message_t msg_ready = { .x = 127, .y = 127, .score = 0 };
                     radio_send(&msg_ready);
                     ultimo_aviso = xTaskGetTickCount();
                 }
@@ -442,13 +442,13 @@ void app_main(void)
                 // 2. Escuchar si el amigo está listo
                 message_t msg_in;
                 if (radio_receive(&msg_in)) {
-                    if (msg_in.x == 9999 && msg_in.y == 9999) {
+                    if (msg_in.x == 127 && msg_in.y == 127) {
                         amigo_encontrado = true;
                         if (game.audio_ok) wifi_audio_play_tone(1046, 200);
                         
                         // Le devolvemos un par de confirmaciones por si no nos escuchó
                         for (int i=0; i<3; i++) {
-                            message_t msg_ready = { .x = 9999, .y = 9999, .score = 0 };
+                            message_t msg_ready = { .x = 127, .y = 127, .score = 0 };
                             radio_send(&msg_ready);
                             vTaskDelay(pdMS_TO_TICKS(50));
                         }
@@ -468,11 +468,7 @@ void app_main(void)
         }
         // --- FIN SALA DE ESPERA ---
 
-        // Resetear todas las variables de la serpiente antes de arrancar el bucle interno
         reset_game();
-        TickType_t last_wake_time = xTaskGetTickCount();
-
-        bool back_to_menu = false;
         TickType_t last_wake_time = xTaskGetTickCount();
 
         // BUCLE INTERNO: partida en curso
@@ -509,13 +505,14 @@ void app_main(void)
                     // --- RECEPCIÓN DE DATOS DE LA OTRA PLACA ---
                     message_t m;
                     if (radio_receive(&m)) {
-                        // snake_arrive recalcula magicamente las coordenadas de entrada y direccion
-                        if (snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
-                            game.snake_is_here = true;
-                            game.score = m.score;
-                            
-                            // Reproducir un sonidito al recibirla
-                            if (game.audio_ok) wifi_audio_play_tone(660, 150);
+                        // Ignoramos los avisos de "127" (pueden ser ecos viejos de la sala de espera)
+                        if (m.x != 127 && m.y != 127) {
+                            if (snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
+                                game.snake_is_here = true;
+                                game.score = m.score;
+                                
+                                if (game.audio_ok) wifi_audio_play_tone(660, 150);
+                            }
                         }
                     }
                 }
