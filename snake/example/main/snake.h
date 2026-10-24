@@ -7,7 +7,7 @@
 
 #define START_LIVES   3
 #define SQUARE_SIZE   4
-#define WALL_SIZE     1
+#define WALL_SIZE     2
 #define MAX_TAIL      200
 #define GAME_SPEED_MS 200
 
