@@ -59,7 +59,7 @@
   - Si Clementina resuelve el puzzle, puede *ponerle un obstáculo/dificultad* a Ada en su partida.
 
   #align(center)[
-    #image("assets/pantallas_obstaculo.png", width: 90%)
+    #image("assets/pantallas_obstaculo.jpeg", width: 90%)
   ]
 ]
 
