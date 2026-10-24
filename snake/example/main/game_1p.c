@@ -38,9 +38,6 @@ void game_1p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
                 if (menu_pause(events, display_ok, audio_ok) == PAUSE_QUIT) {
                     back_to_menu = true;
                 }
-            } else if (ev.id == BTN_KEY4) {
-                snake_safe_walls_add(&s_game, esp_random() % NUM_SHAPES, esp_random() % NUM_ROTATIONS,
-                                     esp_random() % s_game.max_grid_x, esp_random() % s_game.max_grid_y);
             } else {
                 snake_vote_direction(&s_game, ev.id);
             }
