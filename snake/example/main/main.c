@@ -12,6 +12,10 @@
 #include "menu.h"
 #include "board.h" 
 #include "sdkconfig.h"
+#include "snake.h"
+#include "radio.h"
+
+#define EMPIEZA_CON_SERPIENTE 0
 
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -335,6 +339,7 @@ void app_main(void)
     ESP_ERROR_CHECK(buttons_init());
 
     game.audio_ok = wifi_audio_init();
+    bool radio_ok = radio_init() == ESP_OK;
     if (game.audio_ok) {
         wifi_audio_play_tone(523, 120);
     }
@@ -346,6 +351,30 @@ void app_main(void)
     game.max_grid_y = (BOARD_LCD_HEIGHT - 2 * WALL_SIZE) / SQUARE_SIZE;
 
     // BUCLE EXTERNO: Controla el flujo de la aplicación (Menú -> Juego -> Menú)
+    // Alinear la serpiente estrictamente a la grilla de 4x4
+    int square_x = WALL_SIZE + (max_grid_x / 2) * SQUARE_SIZE; 
+    int square_y = WALL_SIZE + (max_grid_y / 2) * SQUARE_SIZE;
+    
+    int dir_x = 1;
+    int dir_y = 0;
+    
+    bool game_over = false; 
+    bool snake_is_here = EMPIEZA_CON_SERPIENTE; // Empieza en la placa 1. La placa 2 debería arrancar en false.
+    bool portals_open = false;
+
+    // Variables de la Serpiente
+    int score = 0; 
+    int cola_visible = 0;
+    int tail_x[MAX_TAIL];
+    int tail_y[MAX_TAIL];
+
+    // Posición inicial de la manzana, alineada a la grilla
+    int apple_x = WALL_SIZE + (esp_random() % max_grid_x) * SQUARE_SIZE;
+    int apple_y = WALL_SIZE + (esp_random() % max_grid_y) * SQUARE_SIZE;
+
+    const int GAME_SPEED_MS = 200;
+    TickType_t last_wake_time = xTaskGetTickCount();
+
     while (1) {
         int selected_mode = 1;
         ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok, game.audio_ok, &selected_mode));
