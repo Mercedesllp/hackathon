@@ -24,7 +24,7 @@
 #include "radio.h"
 
 // 1 = esta placa arranca con la serpiente (placa 1), 0 = arranca sin ella (placa 2)
-#define EMPIEZA_CON_SERPIENTE 1
+bool empieza_con_serpiente = true;
 
 #define WIFI_SSID   "kiwi-audio"
 #define WIFI_PASS   "kiwikiwi"
@@ -199,7 +199,7 @@ static void reset_game(void)
     game.game_over = false;
     game.portals_open = false;
     // En 1 jugador la serpiente siempre está; en multijugador depende de la macro de la placa
-    game.snake_is_here = !game.is_multiplayer || EMPIEZA_CON_SERPIENTE;
+    game.snake_is_here = !game.is_multiplayer || empieza_con_serpiente;
     game.wall_anim_step = 0;
 }
 
@@ -430,25 +430,40 @@ void app_main(void)
             while (xQueueReceive(events, &ev_basura, 0)) {}
 
             TickType_t ultimo_aviso = 0;
+            
+            // "Tiramos los dados": generamos un número al azar del 0 al 9999
+            int mi_ticket = esp_random() % 10000;
 
             while (!amigo_encontrado && !back_to_menu) {
-                // 1. Gritar "Estoy listo" cada 300ms (usamos 127 porque es el límite de 8 bits)
+                // 1. Gritar nuestro número cada 300ms
                 if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
-                    message_t msg_ready = { .x = 127, .y = 127, .score = 0 };
+                    // Usamos el campo score para mandar el ticket
+                    message_t msg_ready = { .x = 127, .y = 127, .score = mi_ticket };
                     radio_send(&msg_ready);
                     ultimo_aviso = xTaskGetTickCount();
                 }
 
-                // 2. Escuchar si el amigo está listo
+                // 2. Escuchar el número del amigo
                 message_t msg_in;
                 if (radio_receive(&msg_in)) {
                     if (msg_in.x == 127 && msg_in.y == 127) {
+                        
+                        // Si de casualidad sacaron el mismo número, tiramos de vuelta y seguimos esperando
+                        if (mi_ticket == msg_in.score) {
+                            mi_ticket = esp_random() % 10000;
+                            continue;
+                        }
+
                         amigo_encontrado = true;
+                        
+                        // El que tiene el número mayor empieza con la serpiente
+                        empieza_con_serpiente = (mi_ticket > msg_in.score);
+                        
                         if (game.audio_ok) wifi_audio_play_tone(1046, 200);
                         
-                        // Le devolvemos un par de confirmaciones por si no nos escuchó
+                        // Le devolvemos 3 confirmaciones para que el otro también pueda comparar los números
                         for (int i=0; i<3; i++) {
-                            message_t msg_ready = { .x = 127, .y = 127, .score = 0 };
+                            message_t msg_ready = { .x = 127, .y = 127, .score = mi_ticket };
                             radio_send(&msg_ready);
                             vTaskDelay(pdMS_TO_TICKS(50));
                         }
@@ -464,7 +479,7 @@ void app_main(void)
                 }
             }
 
-            if (back_to_menu) continue; // Vuelve al inicio del while(1) externo
+            if (back_to_menu) continue; 
         }
         // --- FIN SALA DE ESPERA ---
 
