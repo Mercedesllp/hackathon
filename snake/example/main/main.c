@@ -365,10 +365,18 @@ void app_main(void)
             process_inputs(events, &back_to_menu);
 
             if (!game.game_over) {
-                game.portals_open = (game.score >= 2);
+                // LÓGICA GOLOSA: Se abren cada vez que el score termina en 2 (2, 5, 8, 11...)
+                game.portals_open = ((game.score % 3) == 2);
 
-                if (game.portals_open && game.wall_anim_step < 128) {
-                    game.wall_anim_step += 16; 
+                // Animación bidireccional (abrir y cerrar)
+                if (game.portals_open) {
+                    if (game.wall_anim_step < 128) {
+                        game.wall_anim_step += 16; 
+                    }
+                } else {
+                    if (game.wall_anim_step > 0) {
+                        game.wall_anim_step -= 16; 
+                    }
                 }
 
                 if (game.snake_is_here) {
