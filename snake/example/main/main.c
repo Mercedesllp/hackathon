@@ -226,6 +226,32 @@ static void reset_game(void) {
     idle.last_grant = xTaskGetTickCount();
     idle.adv_walls_count = 0; 
 }
+static void safe_walls_add(shape_id_t shape, int rotation, int x, int y) {
+    walls_add(shape, rotation, x, y);
+    
+    // Obtenemos las celdas exactas que ocupa la pieza que acabamos de tirar
+    int8_t cells[CELLS_PER_SHAPE][2];
+    walls_shape_cells(shape, rotation, cells);
+    
+    // Coordenadas en la grilla de la manzana actual
+    int apple_gx = (game.apple_x - WALL_SIZE) / SQUARE_SIZE;
+    int apple_gy = (game.apple_y - WALL_SIZE) / SQUARE_SIZE;
+    
+    bool apple_covered = false;
+    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+        int cell_gx = x + cells[i][0];
+        int cell_gy = y + cells[i][1];
+        if (cell_gx == apple_gx && cell_gy == apple_gy) {
+            apple_covered = true;
+            break;
+        }
+    }
+    
+    // Si la pieza nueva cae justo arriba de la manzana, la movemos
+    if (apple_covered) {
+        place_apple();
+    }
+}
 
 static void idle_drop_piece(void) {
     if (!walls_take_piece()) {
@@ -299,7 +325,7 @@ static void process_inputs(QueueHandle_t events, bool *back_to_menu) {
                 break;
             case BTN_KEY4:
                 if (!game.is_multiplayer) {
-                    walls_add(esp_random() % NUM_SHAPES, esp_random() % NUM_ROTATIONS, esp_random() % game.max_grid_x, esp_random() % game.max_grid_y);
+                    safe_walls_add(esp_random() % NUM_SHAPES, esp_random() % NUM_ROTATIONS, esp_random() % game.max_grid_x, esp_random() % game.max_grid_y);
                 }
                 break;
             default: break;
@@ -405,7 +431,7 @@ static void receive_messages(void) {
                 break;
             case MSG_WALL:
                 if (m.shape < NUM_SHAPES) {
-                    walls_add(m.shape, m.rotation, m.x, m.y);
+                    safe_walls_add(m.shape, m.rotation, m.x, m.y);
                     if (game.audio_ok) wifi_audio_play_tone(330, 100);
                 }
                 break;
