@@ -409,8 +409,68 @@ void app_main(void)
         int selected_mode = 1;
         ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok, game.audio_ok, &selected_mode));
 
-        game.is_multiplayer = (selected_mode == 2);
+        game.is_multiplayer = (selected_mode == 2);  
+        bool back_to_menu = false;
+
+        // --- SALA DE ESPERA MULTIJUGADOR ---
+        if (game.is_multiplayer) {
+            bool amigo_encontrado = false;
+            
+            if (game.display_ok) {
+                display_clear();
+                display_text(10, 28, "BUSCANDO AMIGO...", false);
+                display_text(10, 44, "(Btn 1 para salir)", false);
+                display_flush();
+            }
+
+            // Limpiamos la basura vieja que haya quedado en la radio o botones
+            message_t basura;
+            while (radio_receive(&basura)) {}
+            button_event_t ev_basura;
+            while (xQueueReceive(events, &ev_basura, 0)) {}
+
+            TickType_t ultimo_aviso = 0;
+
+            while (!amigo_encontrado && !back_to_menu) {
+                // 1. Gritar "Estoy listo" cada 300ms
+                if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
+                    message_t msg_ready = { .x = 9999, .y = 9999, .score = 0 };
+                    radio_send(&msg_ready);
+                    ultimo_aviso = xTaskGetTickCount();
+                }
+
+                // 2. Escuchar si el amigo está listo
+                message_t msg_in;
+                if (radio_receive(&msg_in)) {
+                    if (msg_in.x == 9999 && msg_in.y == 9999) {
+                        amigo_encontrado = true;
+                        if (game.audio_ok) wifi_audio_play_tone(1046, 200);
+                        
+                        // Le devolvemos un par de confirmaciones por si no nos escuchó
+                        for (int i=0; i<3; i++) {
+                            message_t msg_ready = { .x = 9999, .y = 9999, .score = 0 };
+                            radio_send(&msg_ready);
+                            vTaskDelay(pdMS_TO_TICKS(50));
+                        }
+                    }
+                }
+
+                // 3. Permitir cancelar y volver al menú con el Botón 1
+                button_event_t ev;
+                if (xQueueReceive(events, &ev, pdMS_TO_TICKS(50)) == pdTRUE) {
+                    if (ev.pressed && ev.id == BTN_KEY1) {
+                        back_to_menu = true;
+                    }
+                }
+            }
+
+            if (back_to_menu) continue; // Vuelve al inicio del while(1) externo
+        }
+        // --- FIN SALA DE ESPERA ---
+
+        // Resetear todas las variables de la serpiente antes de arrancar el bucle interno
         reset_game();
+        TickType_t last_wake_time = xTaskGetTickCount();
 
         bool back_to_menu = false;
         TickType_t last_wake_time = xTaskGetTickCount();
