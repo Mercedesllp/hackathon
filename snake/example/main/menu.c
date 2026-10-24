@@ -22,7 +22,7 @@ static void draw_start(bool visible) {
 
 static void draw_mode_selection(int current_mode, bool visible) {
     display_clear();
-    display_text(49, 4, "SNAKE", false);
+    display_text(49, 4, "ESNEIK", false);
     
     // Opción 1 Jugador
     if (current_mode == 1) {
