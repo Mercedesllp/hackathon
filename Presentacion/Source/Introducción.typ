@@ -45,10 +45,10 @@
 ]
 
 #slide(title: "¿Cómo se juega? Quiero jugar YA")[
-  Supongamos dos jugadoras: *Amanda* y *Beatriz*.
+  Supongamos dos jugadoras: *Ada* y *Clementina*.
 
-  - *Amanda* juega al Snake de toda la vida.
-  - *Beatriz* resuelve un *puzzle*.
+  - *Ada* juega al Snake de toda la vida.
+  - *Clementina* resuelve un *puzzle*.
 
   #align(center)[
     #image("assets/pantallas_juego.png", width: 80%)
@@ -56,7 +56,7 @@
 ]
 
 #slide(title: "¿Cómo se juega? (2/3)")[
-  - Si Beatriz resuelve el puzzle, puede *ponerle un obstáculo/dificultad* a Amanda en su partida.
+  - Si Clementina resuelve el puzzle, puede *ponerle un obstáculo/dificultad* a Ada en su partida.
 
   #align(center)[
     #image("assets/pantallas_obstaculo.png", width: 90%)
@@ -64,10 +64,10 @@
 ]
 
 #slide(title: "¿Cómo se juega? (3/3)")[
-  Cuando Amanda se come *dos manzanas*, tiene dos opciones:
+  Cuando Ada se come *dos manzanas*, tiene dos opciones:
 
-  - *Pasar a la pantalla de Beatriz* con la víbora y *cambiar de roles*.
-  - *Seguir agrandando la víbora*, para dejársela más difícil a Beatriz cuando se la pase, pero mientras tanto, esta puede tirarle *más bloques*.
+  - *Pasar a la pantalla de Clementina* con la víbora y *cambiar de roles*.
+  - *Seguir agrandando la víbora*, para dejársela más difícil a Clementina cuando se la pase, pero mientras tanto, esta puede tirarle *más bloques*.
 
   #align(center)[
     #image("assets/opciones_dos_manzanas.png", width: 80%)
