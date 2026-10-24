@@ -110,7 +110,7 @@ static void broadcast_audio(void *arg) {
 }
 
 // Nueva función de audio no-bloqueante
-static void wifi_audio_play_tone(int freq_hz, int ms) {
+void wifi_audio_play_tone(int freq_hz, int ms) {
     if (s_server != NULL) {
         httpd_queue_work(s_server, broadcast_audio, (void *)(uintptr_t)(freq_hz << 16 | ms));
     }
