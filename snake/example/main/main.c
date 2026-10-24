@@ -747,7 +747,7 @@ static bool run_fishing_minigame(void) {
             }
         } else {
             progress -= 1.5f; 
-            if (progress. < 0.0f) progress = 0.0f;
+            if (progress < 0.0f) progress = 0.0f;
         }
 
         // 5. RENDERIZAR EN LA PANTALLA LCD
