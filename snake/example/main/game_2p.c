@@ -132,20 +132,38 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
     bool back_to_menu = false;
     TickType_t last_wake_time = xTaskGetTickCount();
 
+    button_id_t held_btn = 0;
     while (!back_to_menu) {
         button_event_t ev;
         snake_clear_votes(&s_game);
 
+        // 1. PROCESAMOS LOS BOTONES (Ahora miramos también cuando se sueltan)
         while (xQueueReceive(events, &ev, 0) == pdTRUE) {
-            if (!ev.pressed) continue;
             if (s_game.game_over || opponent_game_over) {
-                if (ev.id == BTN_KEY1) back_to_menu = true;
+                if (ev.pressed && ev.id == BTN_KEY1) back_to_menu = true;
                 continue;
             }
+
             if (!s_game.snake_is_here) {
-                block_placer_handle_button(ev.id, audio_ok);
+                // Si es un direccional, guardamos el estado (apretado/suelto)
+                if (ev.id == BTN_UP || ev.id == BTN_DOWN || ev.id == BTN_LEFT || ev.id == BTN_RIGHT) {
+                    if (ev.pressed) {
+                        held_btn = ev.id;
+                        is_held = true;
+                    } else if (ev.id == held_btn) {
+                        is_held = false;
+                    }
+                }
+                
+                // Mueve la pieza al tocar el botón por primera vez
+                if (ev.pressed) {
+                    block_placer_handle_button(ev.id, audio_ok);
+                }
             } else {
-                snake_vote_direction(&s_game, ev.id);
+                is_held = false; // Reset por si llegó la víbora mientras manteníamos apretado
+                if (ev.pressed) {
+                    snake_vote_direction(&s_game, ev.id);
+                }
             }
         }
 
@@ -159,6 +177,13 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
             if (s_game.snake_is_here) {
                 snake_step(&s_game);
             } else {
+                // 2. APLICAMOS EL MOVIMIENTO CONTINUO
+                if (is_held) {
+                    // Le mandamos 'false' en el audio para que no te ametralle a pitidos mientras mantenés
+                    block_placer_handle_button(held_btn, false);
+                }
+
+                // ... (Acá abajo sigue igual con tu lógica de minijuegos y el choose_powerup) ...
                 if (!block_placer_has_piece()) {
                     bool won = minigames_run_random(display_ok, audio_ok, poll_and_check_abort);
                     if (won) {
