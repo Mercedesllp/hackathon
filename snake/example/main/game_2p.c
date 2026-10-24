@@ -12,6 +12,7 @@
 #include "sounds.h"
 
 static GameState s_game;
+static bool opponent_game_over = false;
 
 static bool is_occupied_2p(int gx, int gy) {
     return snake_on_cell(&s_game, gx, gy);
@@ -24,6 +25,9 @@ static void receive_messages_2p(void) {
             case MSG_SNAKE:
                 if (!s_game.snake_is_here && snake_arrive(&m, &s_game.x, &s_game.y, &s_game.dir_x, &s_game.dir_y)) {
                     s_game.snake_is_here = true;
+                    // Mantenemos el puntaje propio de esta placa y sumamos lo que traía la serpiente si es necesario, 
+                    // o asignamos el puntaje del contrincante si se prefiere separado. 
+                    // Aquí conservamos el score que traía en su viaje:
                     s_game.score = m.score;
                     s_game.apples_eaten_here = 0;
                     s_game.cola_visible = 0;
@@ -45,29 +49,41 @@ static void receive_messages_2p(void) {
                 }
                 break;
             case MSG_GAME_OVER:
-                s_game.game_over = true;
-                s_game.game_over_notified = true;
-                if (s_game.audio_ok) wifi_audio_play_tone(150, 400);
+                opponent_game_over = true;
                 break;
             default: break;
         }
     }
 }
 
-// Callback para abortar minijuegos si llega la serpiente o termina la partida
 static bool poll_and_check_abort(void) {
     receive_messages_2p();
-    return s_game.snake_is_here || s_game.game_over;
+    return s_game.snake_is_here || s_game.game_over || opponent_game_over;
+}
+
+// Renderizado personalizado para el final de multijugador (Victory o Game Over + Puntaje individual)
+static void render_multiplayer_end(const GameState *g, bool is_winner) {
+    display_clear();
+    if (is_winner) {
+        display_text(37, 16, "VICTORY", true);
+    } else {
+        display_text(31, 16, "GAME OVER", false);
+    }
+    char final_score[16];
+    snprintf(final_score, sizeof(final_score), "Tus puntos: %d", g->score);
+    display_text(16, 36, final_score, false);
+    display_text(10, 52, "Btn 1 para salir", false);
 }
 
 void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
     bool starts_with_snake = true;
     if (!menu_wait_for_friend(events, display_ok, audio_ok, &starts_with_snake)) {
-        return; // Volvió al menú con BTN_KEY1
+        return;
     }
 
     s_game.display_ok = display_ok;
     s_game.audio_ok = audio_ok;
+    opponent_game_over = false;
     snake_reset_game(&s_game, true, starts_with_snake);
     block_placer_reset(s_game.max_grid_x, s_game.max_grid_y);
 
@@ -80,8 +96,8 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
 
         while (xQueueReceive(events, &ev, 0) == pdTRUE) {
             if (!ev.pressed) continue;
-            if (s_game.game_over) {
-                back_to_menu = true;
+            if (s_game.game_over || opponent_game_over) {
+                if (ev.id == BTN_KEY1) back_to_menu = true;
                 continue;
             }
             if (!s_game.snake_is_here) {
@@ -93,7 +109,7 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
 
         if (back_to_menu) break;
 
-        if (!s_game.game_over) {
+        if (!s_game.game_over && !opponent_game_over) {
             receive_messages_2p();
             walls_update(is_occupied_2p);
             snake_update_portals(&s_game);
@@ -101,7 +117,6 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
             if (s_game.snake_is_here) {
                 snake_step(&s_game);
             } else {
-                // Si no tenemos pieza para tirar, lanzamos un minijuego automáticamente
                 if (!block_placer_has_piece()) {
                     bool won = minigames_run_random(display_ok, audio_ok, poll_and_check_abort);
                     if (won) {
@@ -112,6 +127,7 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
             }
         }
 
+        // Si nosotros morimos, avisamos a la otra placa
         if (s_game.game_over && !s_game.game_over_notified) {
             s_game.game_over_notified = true;
             message_t msg_muerte = { .type = MSG_GAME_OVER };
@@ -120,15 +136,21 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
 
         if (display_ok) {
             display_clear();
-            snake_render_walls(&s_game);
-
+            
             if (s_game.game_over) {
-                snake_render_game_over(&s_game);
-            } else if (s_game.snake_is_here) {
-                walls_render();
-                snake_render_here(&s_game);
+                // Si nosotros perdimos -> Game Over para nosotros
+                render_multiplayer_end(&s_game, false);
+            } else if (opponent_game_over) {
+                // Si el rival perdió primero -> Victory para nosotros
+                render_multiplayer_end(&s_game, true);
             } else {
-                block_placer_render();
+                snake_render_walls(&s_game);
+                if (s_game.snake_is_here) {
+                    walls_render();
+                    snake_render_here(&s_game);
+                } else {
+                    block_placer_render();
+                }
             }
             display_flush();
         }
