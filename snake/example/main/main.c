@@ -50,7 +50,7 @@ typedef struct {
     int apple_x, apple_y;
 
     bool game_over;
-    bool game_over_notified; // <--- NUEVO: Para no mandar la muerte mil veces
+    bool game_over_notified; 
     
     bool snake_is_here;
     bool portals_open;
@@ -203,7 +203,7 @@ static void reset_game(void) {
     game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
     
     game.game_over = false;
-    game.game_over_notified = false; // Reset de la notificación
+    game.game_over_notified = false;
     
     game.portals_open = false;
     game.wall_anim_step = 0;
@@ -405,9 +405,8 @@ static void receive_messages(void) {
                 }
                 break;
             case MSG_GAME_OVER:
-                // --- NUEVO: RECIBIMOS LA MUERTE DEL OTRO ---
                 game.game_over = true;
-                game.game_over_notified = true; // Para no devolverle el mensaje
+                game.game_over_notified = true; 
                 if (game.audio_ok) wifi_audio_play_tone(150, 400);
                 break;
             default: break;
@@ -475,18 +474,27 @@ static void render_walls(void) {
         display_fill_rect(w - WALL_SIZE, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
     }
     
+    // --- NUEVO: PUERTA MÁS ANCHA ---
     if (game.entry_steps_left > 0) {
         int hole_x = game.entry_door_x;
         int hole_y = game.entry_door_y;
         int hole_w = SQUARE_SIZE;
         int hole_h = SQUARE_SIZE;
+        
+        int gap = 2; // Píxeles extra para ensanchar la puerta
 
         if (game.entry_dir_x != 0) { 
             hole_w = WALL_SIZE;
+            hole_h = SQUARE_SIZE + (gap * 2);
+            hole_y -= gap;
+            
             if (game.entry_dir_x == 1) hole_x = 0; 
             else hole_x = w - WALL_SIZE;           
         } else { 
             hole_h = WALL_SIZE;
+            hole_w = SQUARE_SIZE + (gap * 2);
+            hole_x -= gap;
+            
             if (game.entry_dir_y == 1) hole_y = 0; 
             else hole_y = h - WALL_SIZE;           
         }
