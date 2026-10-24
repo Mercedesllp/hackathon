@@ -1,19 +1,19 @@
 #pragma once
 
 #include <stdbool.h>
-#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "esp_err.h"
 
-// Muestra la pantalla de inicio, el menú de selección de modo y bloquea hasta confirmar.
+// Constantes para el menú de pausa
+#define PAUSE_RESUME 0
+#define PAUSE_QUIT   1
+
+// Inicia la pantalla de espera y devuelve el modo seleccionado (1 o 2)
+esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_ok, int *selected_mode);
+
+// Menú de pausa (devuelve PAUSE_RESUME o PAUSE_QUIT)
+int menu_pause(QueueHandle_t events, bool display_ok, bool audio_ok);
+
+// Menú interactivo para poner la pared en modo 1 Jugador o Multijugador
 void menu_place_wall(QueueHandle_t events, bool display_ok, bool audio_ok, int *wall_x, int *wall_y, bool *is_vertical);
-
-
-// Opciones de retorno del menú de pausa
-typedef enum {
-    PAUSE_CONTINUE = 0,
-    PAUSE_QUIT = 1
-} pause_choice_t;
-
-// Muestra el menú de pausa y congela el juego hasta elegir una opción
-pause_choice_t menu_pause(QueueHandle_t events, bool display_ok, bool audio_ok);
