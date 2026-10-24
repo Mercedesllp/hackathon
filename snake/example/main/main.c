@@ -706,16 +706,16 @@ static void render_idle(void) {
 static bool run_fishing_minigame(void) {
     int target_y = 16;       // Posición inicial de la zona objetivo
     int target_dir = 1;      // Dirección del objetivo (sube/baja)
-    float player_y = 30.0f;  // Posición de tu barrita
-    float progress = 0.0f;   // Progreso de 0.0 a 100.0 para ganar
+    float player_y = 30.0f;  // Posición de tu barrita controlada por voz
+    float progress = 0.0f;   // Progreso interno para ganar
     
     TickType_t last_wake = xTaskGetTickCount();
     
     while (1) {
-        // 1. SEGURIDAD: Si llega la serpiente mientras pescás, cancelamos el minijuego
+        // 1. SEGURIDAD: Si llega la serpiente, cancelamos el minijuego de inmediato
         receive_messages();
         if (game.snake_is_here) {
-            return false; // Se cancela la pesca porque volvió la serpiente
+            return false; 
         }
 
         // 2. MOVER LA ZONA OBJETIVO (Rebota de arriba a abajo)
@@ -724,14 +724,14 @@ static bool run_fishing_minigame(void) {
             target_dir *= -1;
         }
 
-        // 3. LEER EL MICRÓFONO CON TU DRIVER REAL
+        // 3. LEER EL MICRÓFONO CON MENOS SENSIBILIDAD
         int mic_val = audio_mic_level(); // 0 a 100
         
-        // Umbral de ruido: soplá o hacé ruido para subir la barrita
-        if (mic_val > 15) { 
-            player_y -= 2.5f; // Sube si hacés ruido / soplás
+        // ANTES ESTABA EN 15. LO SUBIMOS A 45 O 50 PARA QUE EXIJA SOPLAR O HABLAR FUERTE
+        if (mic_val > 45) { 
+            player_y -= 1.5f; // Sube más suave (menos brusco)
         } else {
-            player_y += 1.8f; // Cae por "gravedad" si hay silencio
+            player_y += 1.2f; // Cae por gravedad de forma controlada
         }
         
         // Límites de la barrita en pantalla
@@ -739,40 +739,31 @@ static bool run_fishing_minigame(void) {
         if (player_y > 44) player_y = 44;
 
         // 4. VERIFICAR SI ESTÁS ADENTRO DE LA ZONA OBJETIVO
-        // La zona objetivo mide 14 píxeles de alto
         if (player_y >= target_y && player_y <= (target_y + 14)) {
-            progress += 3.0f; // Sube el progreso si le atinas
+            progress += 2.0f; 
             if (progress >= 100.0f) {
-                if (game.audio_ok) audio_play_tone(880, 150);
-                return true; // ¡Ganaste el bloque pescando!
+                audio_play_tone(880, 150);
+                return true; // ¡Ganaste el bloque!
             }
         } else {
-            progress -= 2.0f; // Baja si te salís
-            if (progress < 0.0f) progress = 0.0f;
+            progress -= 1.5f; 
+            if (progress. < 0.0f) progress = 0.0f;
         }
 
         // 5. RENDERIZAR EN LA PANTALLA LCD
         if (game.display_ok) {
             display_clear();
             
-            // Título y barra de progreso superior
-            display_text(0, 2, "¡PESCA EL BLOQUE!", false);
-            int bar_w = (int)(progress * 128 / 100);
-            display_fill_rect(0, 12, bar_w, 3, true);
+            display_text(4, 20, "¡SOPLA!", false);
+            display_text(4, 32, "PESCA!", false);
 
-            // Riel vertical de la pesca (derecha de la pantalla)
-            display_draw_rect(96, 18, 12, 44);
-            
-            // Zona objetivo (se mueve sola)
-            display_fill_rect(98, 18 + target_y, 8, 14, true);
-            
-            // Tu barrita (controlada soplando al micrófono)
-            display_fill_rect(95, 18 + (int)player_y, 14, 4, false);
+            display_draw_rect(96, 10, 14, 48);
+            display_fill_rect(98, 10 + target_y, 10, 14, true);
+            display_fill_rect(95, 10 + (int)player_y, 16, 4, false);
 
             display_flush();
         }
 
-        // 6. 30 FPS Aprox
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(33));
     }
 }
