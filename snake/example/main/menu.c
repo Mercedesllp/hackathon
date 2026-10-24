@@ -1,282 +1,49 @@
-#include "menu.h"
-#include "display.h"
-#include "buttons.h"
-#include "board.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-extern void wifi_audio_play_tone(int freq_hz, int ms);
-
-#define BLINK_MS 500
-
-static void draw_start(bool visible) {
-    display_clear();
-    display_text(49, 12, "SNAKE", false);
-    if (visible) display_text(49, 36, "START", false);
-    display_flush();
-}
-
-static void draw_mode_selection(int current_mode, bool visible) {
-    display_clear();
-    display_text(49, 4, "SNAKE", false); // Subimos el título un poquito
-    
-    // Opción 1 Jugador
-    if (current_mode == 1) {
-        if (visible) display_text(25, 28, "> 1 JUGADOR <", false);
-        else display_text(37, 28, "1 JUGADOR", false);
-    } else {
-        display_text(37, 28, "1 JUGADOR", false);
-    }
-
-    // Opción 2 Jugadores
-    if (current_mode == 2) {
-        if (visible) display_text(19, 44, "> 2 JUGADORES <", false);
-        else display_text(31, 44, "2 JUGADORES", false);
-    } else {
-        display_text(31, 44, "2 JUGADORES", false);
-    }
-    
-    display_flush();
-}
-
-esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_ok, int *selected_mode) {
-    button_event_t ev;
-
-    // --- ANIMACIÓN DE ENTRADA (S-N-A-K-E) ---
+bool menu_wait_for_friend(QueueHandle_t events, bool display_ok, bool audio_ok, bool *starts_with_snake) {
     if (display_ok) {
-        const int anim_frames = 20;
-        const int anim_delay = 25;
-        for (int step = 0; step <= anim_frames; step++) {
-            display_clear();
-            
-            // S: De izquierda (x=0) a su posición final (x=49)
-            int s_x  = 0 + (49 - 0) * step / anim_frames;
-            // N: De abajo (y=64) a (y=12)
-            int n_y  = 64 + (12 - 64) * step / anim_frames;
-            // A: De arriba (y=0) a (y=12)
-            int a_y  = 0 + (12 - 0) * step / anim_frames;
-            // K: De abajo (y=64) a (y=12)
-            int k_y  = 64 + (12 - 64) * step / anim_frames;
-            // E: De derecha (x=120) a (x=73)
-            int e_x  = 120 + (73 - 120) * step / anim_frames;
-
-            display_text(s_x, 12, "S", false);
-            display_text(55, n_y, "N", false);
-            display_text(61, a_y, "A", false);
-            display_text(67, k_y, "K", false);
-            display_text(e_x, 12, "E", false);
-            
-            display_flush();
-            vTaskDelay(pdMS_TO_TICKS(anim_delay));
-        }
+        display_clear();
+        display_text(10, 28, "BUSCANDO AMIGO...", false);
+        display_text(10, 44, "(Btn 1 para salir)", false);
+        display_flush();
     }
-    
-    // Limpiamos los botones apretados por ansiedad
-    while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
 
-    // Configuración de la música (Vibe más tranqui)
-    const int notes[] = {196, 220, 262, 220}; 
-    const int note_duration = 250; 
-    int num_notes = 4;
-    int note_idx = 0;
-    
-    int time_to_blink = 0; 
-    bool visible = false;
-    
-    // Variables de estado del menú
-    bool in_mode_selection = false;
-    int current_mode = 1;
+    message_t basura;
+    while (radio_receive(&basura)) {}
+    button_event_t ev_basura;
+    while (xQueueReceive(events, &ev_basura, 0)) {}
+
+    TickType_t ultimo_aviso = 0;
+    int mi_ticket = esp_random() % 10000;
 
     while (1) {
-        // 1. Manejo del parpadeo
-        if (time_to_blink <= 0) {
-            visible = !visible;
-            if (display_ok) {
-                if (!in_mode_selection) draw_start(visible);
-                else draw_mode_selection(current_mode, visible);
-            }
-            time_to_blink = BLINK_MS;
+        if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
+            message_t msg_ready = { .type = MSG_READY, .score = mi_ticket };
+            radio_send(&msg_ready);
+            ultimo_aviso = xTaskGetTickCount();
         }
 
-        // 2. Tocar la nota
-        if (audio_ok) wifi_audio_play_tone(notes[note_idx], note_duration);
-
-        TickType_t start_tick = xTaskGetTickCount();
-        TickType_t ticks_to_wait = pdMS_TO_TICKS(note_duration);
-        
-        // 3. Esperar a que termine la nota mientras leemos botones
-        while (ticks_to_wait > 0) {
-            if (xQueueReceive(events, &ev, ticks_to_wait) == pdTRUE) {
-                if (ev.pressed) {
-                    if (!in_mode_selection) {
-                        // Pasar de "START" a Selección de Modo
-                        in_mode_selection = true;
-                        visible = true;
-                        time_to_blink = BLINK_MS;
-                        if (audio_ok) wifi_audio_play_tone(880, 100);
-                        if (display_ok) draw_mode_selection(current_mode, visible);
-                    } else {
-                        // Navegar por el submenú solo con el joystick (arriba/abajo)
-                        if (ev.id == BTN_UP || ev.id == BTN_DOWN) {
-                            current_mode = (current_mode == 1) ? 2 : 1; // Alterna entre 1 y 2
-                            visible = true; 
-                            time_to_blink = BLINK_MS;
-                            if (audio_ok) wifi_audio_play_tone(440, 50);
-                            if (display_ok) draw_mode_selection(current_mode, visible);
-                        } 
-                        // Confirmar modo SOLO con el BOTÓN 1
-                        else if (ev.id == BTN_KEY1) {
-                            if (audio_ok) wifi_audio_play_tone(1046, 400);
-                            *selected_mode = current_mode;
-                            return ESP_OK;
-                        }
-                    }
-                }
-                
-                TickType_t elapsed = xTaskGetTickCount() - start_tick;
-                if (elapsed < pdMS_TO_TICKS(note_duration)) {
-                    ticks_to_wait = pdMS_TO_TICKS(note_duration) - elapsed;
-                } else {
-                    ticks_to_wait = 0;
-                }
-            } else {
-                ticks_to_wait = 0; 
+        message_t msg_in;
+        if (radio_receive(&msg_in) && msg_in.type == MSG_READY) {
+            if (mi_ticket == msg_in.score) {
+                mi_ticket = esp_random() % 10000;
+                continue;
             }
+
+            *starts_with_snake = (mi_ticket > msg_in.score);
+            if (audio_ok) wifi_audio_play_tone(1046, 200);
+
+            for (int i = 0; i < 3; i++) {
+                message_t msg_ready_confirm = { .type = MSG_READY, .score = mi_ticket };
+                radio_send(&msg_ready_confirm);
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
+            return true;
         }
 
-        // 4. Ciclar al siguiente frame de música
-        time_to_blink -= note_duration;
-        note_idx = (note_idx + 1) % num_notes;
-    }
-}
-
-static void draw_pause_menu(int current_option) {
-    display_clear();
-    display_text(49, 12, "PAUSA", false);
-    
-    // Opción Continuar (0)
-    if (current_option == 0) {
-        display_text(25, 36, "> CONTINUAR <", false);
-    } else {
-        display_text(37, 36, "CONTINUAR", false);
-    }
-
-    // Opción Salir (1)
-    if (current_option == 1) {
-        display_text(37, 52, "> SALIR <", false);
-    } else {
-        display_text(49, 52, "SALIR", false);
-    }
-    
-    display_flush();
-}
-
-int menu_pause(QueueHandle_t events, bool display_ok, bool audio_ok) {
-    button_event_t ev;
-    int current_option = 0; 
-    
-    // Limpiamos botones apretados por accidente antes de pausar
-    while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
-    
-    if (display_ok) draw_pause_menu(current_option);
-    if (audio_ok) wifi_audio_play_tone(880, 100);
-
-    while (1) {
-        if (xQueueReceive(events, &ev, portMAX_DELAY) == pdTRUE) {
-            if (ev.pressed) {
-                // Moverse arriba/abajo solo con el joystick
-                if (ev.id == BTN_UP || ev.id == BTN_DOWN) {
-                    current_option = !current_option; // Alterna entre 0 y 1
-                    if (audio_ok) wifi_audio_play_tone(440, 50);
-                    if (display_ok) draw_pause_menu(current_option);
-                } 
-                // Seleccionar opción con el BOTÓN 1
-                else if (ev.id == BTN_KEY1) {
-                    if (audio_ok) wifi_audio_play_tone(1046, 200);
-                    return current_option;
-                }
-            }
-        }
-    }
-}
-
-void menu_place_wall(QueueHandle_t events, bool display_ok, bool audio_ok, int *wall_x, int *wall_y, bool *is_vertical) {
-    // Posición inicial al centro de la pantalla
-    int cx = 54; 
-    int cy = 28;
-    bool vert = false;     // Arranca horizontal
-    bool visible = true;
-    int blink_timer = 0;
-    
-    button_event_t ev;
-    // Limpiar la cola de eventos por si quedaron botones apretados
-    while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
-
-    while (1) {
-        // Leemos inputs con un delay de 50ms para que sirva de framerate
+        button_event_t ev;
         if (xQueueReceive(events, &ev, pdMS_TO_TICKS(50)) == pdTRUE) {
-            if (ev.pressed) {
-                // Mover la pared (saltos de 4 pixeles = 1 bloque de la serpiente)
-                if (ev.id == BTN_UP)    cy -= 4;
-                if (ev.id == BTN_DOWN)  cy += 4;
-                if (ev.id == BTN_LEFT)  cx -= 4;
-                if (ev.id == BTN_RIGHT) cx += 4;
-                
-                // Rotar con Botón 1
-                if (ev.id == BTN_KEY1) {
-                    vert = !vert;
-                    if (audio_ok) wifi_audio_play_tone(880, 50);
-                }
-                
-                // Confirmar con Botón 2
-                if (ev.id == BTN_KEY2) {
-                    if (audio_ok) wifi_audio_play_tone(1046, 150);
-                    *wall_x = cx;
-                    *wall_y = cy;
-                    *is_vertical = vert;
-                    return; // Salimos de la función y volvemos al juego
-                }
+            if (ev.pressed && ev.id == BTN_KEY1) {
+                return false;
             }
-        }
-
-        // Definir tamaño en píxeles (2x5 o 5x2 cuadraditos de 4px)
-        int w = vert ? 8 : 20;
-        int h = vert ? 20 : 8;
-
-        // Evitar que la pared se salga de los límites (1px de borde)
-        // Suponemos pantalla de 128x64
-        if (cx < 1) cx = 1;
-        if (cy < 1) cy = 1;
-        if (cx > 128 - 1 - w) cx = 128 - 1 - w; 
-        if (cy > 64 - 1 - h) cy = 64 - 1 - h;   
-
-        // Lógica de parpadeo (titila cada 150ms)
-        blink_timer += 50;
-        if (blink_timer >= 150) {
-            visible = !visible;
-            blink_timer = 0;
-        }
-
-        // Dibujo
-        if (display_ok) {
-            display_clear();
-            
-            // Dibujamos el marco exterior para tener referencia espacial
-            display_fill_rect(0, 0, 128, 1, true);
-            display_fill_rect(0, 63, 128, 1, true);
-            display_fill_rect(0, 0, 1, 64, true);
-            display_fill_rect(127, 0, 1, 64, true);
-
-            // Ayudamemoria
-            display_text(10, 5, "B1: ROTAR", false);
-            display_text(10, 50, "B2: PONER", false);
-
-            // Dibujar la pared fantasma si toca fotograma visible
-            if (visible) {
-                display_fill_rect(cx, cy, w, h, true);
-            }
-            
-            display_flush();
         }
     }
 }
