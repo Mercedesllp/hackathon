@@ -226,32 +226,6 @@ static void reset_game(void) {
     idle.last_grant = xTaskGetTickCount();
     idle.adv_walls_count = 0; 
 }
-static void safe_walls_add(shape_id_t shape, int rotation, int x, int y) {
-    walls_add(shape, rotation, x, y);
-    
-    // Obtenemos las celdas exactas que ocupa la pieza que acabamos de tirar
-    int8_t cells[CELLS_PER_SHAPE][2];
-    walls_shape_cells(shape, rotation, cells);
-    
-    // Coordenadas en la grilla de la manzana actual
-    int apple_gx = (game.apple_x - WALL_SIZE) / SQUARE_SIZE;
-    int apple_gy = (game.apple_y - WALL_SIZE) / SQUARE_SIZE;
-    
-    bool apple_covered = false;
-    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
-        int cell_gx = x + cells[i][0];
-        int cell_gy = y + cells[i][1];
-        if (cell_gx == apple_gx && cell_gy == apple_gy) {
-            apple_covered = true;
-            break;
-        }
-    }
-    
-    // Si la pieza nueva cae justo arriba de la manzana, la movemos
-    if (apple_covered) {
-        place_apple();
-    }
-}
 
 static void idle_drop_piece(void) {
     if (!walls_take_piece()) {
@@ -397,6 +371,33 @@ static void place_apple(void) {
     } while (walls_hit(gx, gy) && ++intentos < 100);
     game.apple_x = WALL_SIZE + gx * SQUARE_SIZE;
     game.apple_y = WALL_SIZE + gy * SQUARE_SIZE;
+}
+
+static void safe_walls_add(shape_id_t shape, int rotation, int x, int y) {
+    walls_add(shape, rotation, x, y);
+    
+    // Obtenemos las celdas exactas que ocupa la pieza que acabamos de tirar
+    int8_t cells[CELLS_PER_SHAPE][2];
+    walls_shape_cells(shape, rotation, cells);
+    
+    // Coordenadas en la grilla de la manzana actual
+    int apple_gx = (game.apple_x - WALL_SIZE) / SQUARE_SIZE;
+    int apple_gy = (game.apple_y - WALL_SIZE) / SQUARE_SIZE;
+    
+    bool apple_covered = false;
+    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+        int cell_gx = x + cells[i][0];
+        int cell_gy = y + cells[i][1];
+        if (cell_gx == apple_gx && cell_gy == apple_gy) {
+            apple_covered = true;
+            break;
+        }
+    }
+    
+    // Si la pieza nueva cae justo arriba de la manzana, la movemos
+    if (apple_covered) {
+        place_apple();
+    }
 }
 
 static void check_apple_collision(void) {
