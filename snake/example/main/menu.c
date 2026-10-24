@@ -74,9 +74,9 @@ esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_
     // Limpiamos los botones apretados por ansiedad
     while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
 
-    // Configuración de la música
-    const int notes[] = {196, 220, 262, 220}; // Sol, La, Do, La (Octavas más graves)
-    const int note_duration = 250; // El doble de lento (250ms por nota)
+    // Configuración de la música (Vibe más tranqui)
+    const int notes[] = {196, 220, 262, 220}; 
+    const int note_duration = 250; 
     int num_notes = 4;
     int note_idx = 0;
     
@@ -130,7 +130,6 @@ esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_
                             *selected_mode = current_mode;
                             return ESP_OK;
                         }
-                    }
                     }
                 }
                 
