@@ -286,11 +286,10 @@ static void safe_walls_add(shape_id_t shape, int rotation, int x, int y) {
 }
 
 static void idle_drop_piece(void) {
-    if (!walls_take_piece()) {
-        if (game.audio_ok) wifi_audio_play_tone(200, 80); 
-        return;
-    }
+    // Si no tenemos pieza activa, no hacemos nada
+    if (!idle.has_piece) return;
     
+    // Guardamos la pieza en nuestro "radar" del mapa enemigo
     if (idle.adv_walls_count < MAX_ADV_WALLS) {
         idle.adv_walls[idle.adv_walls_count].x = idle.cursor_x;
         idle.adv_walls[idle.adv_walls_count].y = idle.cursor_y;
@@ -309,8 +308,8 @@ static void idle_drop_piece(void) {
     radio_send(&m);
     if (game.audio_ok) wifi_audio_play_tone(990, 80);
 
-    idle.piece = idle.next;
-    idle.next = walls_bag_next();
+    // Al tirar la pieza, nos quedamos sin piezas y se disparará el puzle automático
+    idle.has_piece = false;
     idle.rotation = 0;
 }
 
