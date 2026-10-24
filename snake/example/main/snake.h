@@ -10,9 +10,21 @@
 #define WALL_SIZE   1
 #define MAX_TAIL    200 // Límite máximo de la cola
 
-typedef struct message {
-    int8_t x, y;
-    uint16_t score;
+// Qué significa cada mensaje entre placas
+typedef enum {
+    MSG_READY = 1, // sala de espera: "estoy listo"
+    MSG_SNAKE = 2, // la serpiente cruza a tu placa (usa x, y, score)
+    MSG_WALL  = 3, // te tiro una pared (usa x, y, shape, rotation)
+} msg_type_t;
+
+// Un solo formato para todos los mensajes: según `type`, se usan unos campos
+// u otros. packed = sin bytes de relleno, así ocupa exactamente 7 bytes.
+typedef struct __attribute__((packed)) message {
+    uint8_t type;      // msg_type_t
+    int8_t x, y;       // SNAKE: posición al salir de la otra placa; WALL: ancla de la pieza
+    uint8_t shape;     // WALL: shape_id_t
+    uint8_t rotation;  // WALL: 0..3
+    uint16_t score;    // SNAKE: largo de la serpiente
 } message_t;
 
 
