@@ -56,6 +56,8 @@ typedef struct {
     int votos_abajo;
     int votos_izq;
     int votos_der;
+
+    bool is_multiplayer; 
 } GameState;
 
 static GameState game;
@@ -163,12 +165,9 @@ void reset_game(void) {
     game.wall_anim_step = 0;
 }
 
-void process_inputs(QueueHandle_t events) {
+void process_inputs(QueueHandle_t events, bool *back_to_menu) {
     button_event_t ev;
-    game.votos_arriba = 0;
-    game.votos_abajo = 0;
-    game.votos_izq = 0;
-    game.votos_der = 0;
+    game.votos_arriba = 0; game.votos_abajo = 0; game.votos_izq = 0; game.votos_der = 0;
 
     while (xQueueReceive(events, &ev, 0) == pdTRUE) {
         if (ev.pressed) {
@@ -176,15 +175,18 @@ void process_inputs(QueueHandle_t events) {
                 reset_game();
             } else {
                 switch (ev.id) {
+                    // --- MOVIMIENTOS ---
                     case BTN_UP:    game.votos_izq++; break;
                     case BTN_RIGHT: game.votos_arriba++; break;
                     case BTN_DOWN:  game.votos_der++; break;
                     case BTN_LEFT:  game.votos_abajo++; break;
 
-                    case BTN_KEY4:  game.votos_arriba++; break;
-                    case BTN_KEY1:  game.votos_izq++; break;
-                    case BTN_KEY2:  game.votos_abajo++; break;
-                    case BTN_KEY3:  game.votos_der++; break;
+                    // --- BOTÓN DE PAUSA ---
+                    case BTN_KEY1: 
+                        if (menu_pause(events, game.display_ok, game.audio_ok) == PAUSE_QUIT) {
+                            *back_to_menu = true; // Avisamos que queremos salir al inicio
+                        }
+                        break;
                     default: break;
                 }
             }
@@ -216,11 +218,22 @@ void check_walls(void) {
         current_grid_y < 0 || current_grid_y >= game.max_grid_y) {
         
         if (game.portals_open) {
-            game.snake_is_here = false;
-            // TODO: ENVIAR DATOS (score, dir_x, dir_y, posición) POR I2C ACÁ
-            if (game.audio_ok) wifi_audio_play_tone(440, 150);
+            if (game.is_multiplayer) {
+                game.snake_is_here = false; // Se va a la otra placa
+                // TODO: ENVIAR DATOS I2C
+                if (game.audio_ok) wifi_audio_play_tone(440, 150);
+            } else {
+                // MODO 1 JUGADOR: Aparece por el borde opuesto
+                if (current_grid_x < 0) game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
+                else if (current_grid_x >= game.max_grid_x) game.x = WALL_SIZE;
+
+                if (current_grid_y < 0) game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
+                else if (current_grid_y >= game.max_grid_y) game.y = WALL_SIZE;
+                
+                if (game.audio_ok) wifi_audio_play_tone(660, 150);
+            }
         } else {
-            game.game_over = true; 
+            game.game_over = true; // Choca contra la pared
             if (game.audio_ok) wifi_audio_play_tone(150, 400);
         }
     }
@@ -323,97 +336,105 @@ void app_main(void)
 
     game.audio_ok = wifi_audio_init();
     if (game.audio_ok) {
-        // Melodía inicial opcional (esta la hacemos bloqueante intencionalmente porque es al prender la placa)
         wifi_audio_play_tone(523, 120);
     }
 
     QueueHandle_t events = buttons_event_queue();
-    ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok, game.audio_ok));    // Inicializar variables calculadas
+    
+    // Inicializar variables calculadas (solo hace falta una vez)
     game.max_grid_x = (BOARD_LCD_WIDTH - 2 * WALL_SIZE) / SQUARE_SIZE;
     game.max_grid_y = (BOARD_LCD_HEIGHT - 2 * WALL_SIZE) / SQUARE_SIZE;
-    reset_game();
 
-    TickType_t last_wake_time = xTaskGetTickCount();
-
+    // BUCLE EXTERNO: Controla el flujo de la aplicación (Menú -> Juego -> Menú)
     while (1) {
-        process_inputs(events);
+        int selected_mode = 1;
+        ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok, game.audio_ok, &selected_mode));
+        
+        game.is_multiplayer = (selected_mode == 2);  
+        
+        // Resetear todas las variables de la serpiente antes de arrancar el bucle interno
+        reset_game();
 
-        if (!game.game_over) {
-            game.portals_open = (game.score >= 2);
+        bool back_to_menu = false;
+        TickType_t last_wake_time = xTaskGetTickCount();
 
-            if (game.portals_open && game.wall_anim_step < 128) {
-                game.wall_anim_step += 16; 
-            }
+        // BUCLE INTERNO: La partida en curso
+        while (!back_to_menu) {
+            
+            // Le pasamos el puntero para que la pausa pueda cambiar back_to_menu a true
+            process_inputs(events, &back_to_menu);
 
-            if (game.snake_is_here) {
-                resolve_new_direction();
+            if (!game.game_over) {
+                game.portals_open = (game.score >= 2);
 
-                int prev_x = game.x;
-                int prev_y = game.y;
-
-                // Mover cabeza
-                game.x += game.dir_x * SQUARE_SIZE;
-                game.y += game.dir_y * SQUARE_SIZE;
-
-                check_walls();
-
-                if (!game.game_over && game.snake_is_here) {
-                    check_apple_collision();
-                    update_tail_positions(prev_x, prev_y);
-                    check_self_collision();
+                if (game.portals_open && game.wall_anim_step < 128) {
+                    game.wall_anim_step += 16; 
                 }
-            } else {
-                // TODO: LEER DATOS I2C ACÁ
-                // Si la serpiente vuelve a esta placa:
-                // game.snake_is_here = true;
 
-                // Si tocás cualquier botón direccional, la serpiente vuelve
-                if (game.votos_arriba > 0 || game.votos_abajo > 0 || 
-                    game.votos_izq > 0 || game.votos_der > 0) {
-                    
-                    game.snake_is_here = true;
+                if (game.snake_is_here) {
+                    resolve_new_direction();
 
-                    // Averiguamos por qué borde se fue para hacerla aparecer por el opuesto
-                    int current_grid_x = (game.x - WALL_SIZE) / SQUARE_SIZE;
-                    int current_grid_y = (game.y - WALL_SIZE) / SQUARE_SIZE;
+                    int prev_x = game.x;
+                    int prev_y = game.y;
 
-                    // Si salió por la izquierda, aparece por la derecha (y viceversa)
-                    if (current_grid_x < 0) {
-                        game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
-                    } else if (current_grid_x >= game.max_grid_x) {
-                        game.x = WALL_SIZE;
+                    // Mover cabeza
+                    game.x += game.dir_x * SQUARE_SIZE;
+                    game.y += game.dir_y * SQUARE_SIZE;
+
+                    check_walls();
+
+                    if (!game.game_over && game.snake_is_here) {
+                        check_apple_collision();
+                        update_tail_positions(prev_x, prev_y);
+                        check_self_collision();
                     }
+                } else {
+                    // TODO: LEER DATOS I2C ACÁ
 
-                    // Si salió por arriba, aparece por abajo (y viceversa)
-                    if (current_grid_y < 0) {
-                        game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
-                    } else if (current_grid_y >= game.max_grid_y) {
-                        game.y = WALL_SIZE;
+                    // HACK TEMPORAL PARA TESTING
+                    if (game.votos_arriba > 0 || game.votos_abajo > 0 || 
+                        game.votos_izq > 0 || game.votos_der > 0) {
+                        
+                        game.snake_is_here = true;
+
+                        int current_grid_x = (game.x - WALL_SIZE) / SQUARE_SIZE;
+                        int current_grid_y = (game.y - WALL_SIZE) / SQUARE_SIZE;
+
+                        if (current_grid_x < 0) {
+                            game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
+                        } else if (current_grid_x >= game.max_grid_x) {
+                            game.x = WALL_SIZE;
+                        }
+
+                        if (current_grid_y < 0) {
+                            game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
+                        } else if (current_grid_y >= game.max_grid_y) {
+                            game.y = WALL_SIZE;
+                        }
+                        
+                        if (game.audio_ok) wifi_audio_play_tone(660, 150);
                     }
-                    
-                    if (game.audio_ok) wifi_audio_play_tone(660, 150);
                 }
             }
-        }
 
-        // Renderizado Orquestado
-        if (game.display_ok) {
-            display_clear();
-            
-            render_walls();
-            
-            
-            if (game.game_over) {
-                render_game_over();
-            } else if (game.snake_is_here) {
-                render_snake_here();
-            } else {
-                render_waiting();
+            // Renderizado Orquestado
+            if (game.display_ok) {
+                display_clear();
+                
+                render_walls();
+                
+                if (game.game_over) {
+                    render_game_over();
+                } else if (game.snake_is_here) {
+                    render_snake_here();
+                } else {
+                    render_waiting();
+                }
+                
+                display_flush();
             }
-            
-            display_flush();
-        }
 
-        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
+            vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
+        }
     }
 }
