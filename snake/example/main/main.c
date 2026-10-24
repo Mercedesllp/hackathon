@@ -214,6 +214,10 @@ static void reset_game(void) {
     game.snake_is_here = !game.is_multiplayer || empieza_con_serpiente;
     walls_reset();
 
+    if (game.is_multiplayer && !game.snake_is_here) {
+        walls_grant_piece();
+    }
+
     idle.cursor_x = game.max_grid_x / 2;
     idle.cursor_y = game.max_grid_y / 2;
     idle.piece = walls_bag_next();
@@ -340,6 +344,7 @@ static void check_walls(void) {
     if (!choca_pared) {
         if (game.is_multiplayer) {
             game.snake_is_here = false; 
+            walls_grant_piece();
             message_t mensaje = { .type = MSG_SNAKE, .x = gx, .y = gy, .score = game.score };
             radio_send(&mensaje);
             if (game.audio_ok) wifi_audio_play_tone(440, 150);
@@ -699,12 +704,7 @@ void app_main(void) {
                         update_tail_positions(prev_x, prev_y);
                         check_self_collision();
                     }
-                } else {
-                    if (xTaskGetTickCount() - idle.last_grant >= pdMS_TO_TICKS(PIECE_GRANT_MS)) {
-                        walls_grant_piece();
-                        idle.last_grant = xTaskGetTickCount();
-                    }
-                }
+                } 
             }
 
             // --- NUEVO: AVISAR MUERTE A LA OTRA PLACA ---
