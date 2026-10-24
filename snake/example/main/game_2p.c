@@ -84,8 +84,6 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
     s_game.display_ok = display_ok;
     s_game.audio_ok = audio_ok;
     opponent_game_over = false;
-    bool audio_played = false; // <--- Bandera para que el sonido suene una sola vez
-    
     snake_reset_game(&s_game, true, starts_with_snake);
     block_placer_reset(s_game.max_grid_x, s_game.max_grid_y);
 
@@ -93,24 +91,57 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
     TickType_t last_wake_time = xTaskGetTickCount();
 
     while (!back_to_menu) {
-        // ... (tu código de lectura de botones y actualización del juego sigue igual) ...
+        button_event_t ev;
+        snake_clear_votes(&s_game);
+
+        while (xQueueReceive(events, &ev, 0) == pdTRUE) {
+            if (!ev.pressed) continue;
+            if (s_game.game_over || opponent_game_over) {
+                if (ev.id == BTN_KEY1) back_to_menu = true;
+                continue;
+            }
+            if (!s_game.snake_is_here) {
+                block_placer_handle_button(ev.id, audio_ok);
+            } else {
+                snake_vote_direction(&s_game, ev.id);
+            }
+        }
+
+        if (back_to_menu) break;
+
+        if (!s_game.game_over && !opponent_game_over) {
+            receive_messages_2p();
+            walls_update(is_occupied_2p);
+            snake_update_portals(&s_game);
+
+            if (s_game.snake_is_here) {
+                snake_step(&s_game);
+            } else {
+                if (!block_placer_has_piece()) {
+                    bool won = minigames_run_random(display_ok, audio_ok, poll_and_check_abort);
+                    if (won) {
+                        block_placer_grant_piece();
+                    }
+                    last_wake_time = xTaskGetTickCount();
+                }
+            }
+        }
+
+        // Si nosotros morimos, avisamos a la otra placa
+        if (s_game.game_over && !s_game.game_over_notified) {
+            s_game.game_over_notified = true;
+            message_t msg_muerte = { .type = MSG_GAME_OVER };
+            radio_send(&msg_muerte);
+        }
 
         if (display_ok) {
             display_clear();
             
             if (s_game.game_over) {
-                // Si perdimos nosotros
-                if (!audio_played) {
-                    if (audio_ok) sounds_play_game_over(); // <--- Suena una vez
-                    audio_played = true;
-                }
+                // Si nosotros perdimos -> Game Over para nosotros
                 render_multiplayer_end(&s_game, false);
             } else if (opponent_game_over) {
-                // Si ganó el rival (nosotros ganamos)
-                if (!audio_played) {
-                    if (audio_ok) sounds_play_victory();   // <--- Suena una vez
-                    audio_played = true;
-                }
+                // Si el rival perdió primero -> Victory para nosotros
                 render_multiplayer_end(&s_game, true);
             } else {
                 snake_render_walls(&s_game);

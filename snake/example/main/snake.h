@@ -35,8 +35,6 @@ typedef struct {
     int tail_y[MAX_TAIL];
     int apple_x, apple_y;
 
-    int lives;
-
     bool game_over;
     bool game_over_notified;
 

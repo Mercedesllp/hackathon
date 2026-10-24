@@ -21,7 +21,7 @@ void app_main(void) {
     }
 
     if (audio_ok) {
-        sounds_play_tone(330, 60); // Un tono más bajo, cortito y sutil
+        wifi_audio_play_tone(523, 120);
     }
 
     QueueHandle_t events = buttons_event_queue();
