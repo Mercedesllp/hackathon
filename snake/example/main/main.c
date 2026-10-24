@@ -293,10 +293,27 @@ static void idle_handle_button(button_id_t id) {
         case BTN_KEY3:  idle_drop_piece(); break;
         default: break;
     }
-    if (idle.cursor_x < 0) idle.cursor_x = 0;
-    if (idle.cursor_x >= game.max_grid_x) idle.cursor_x = game.max_grid_x - 1;
-    if (idle.cursor_y < 0) idle.cursor_y = 0;
-    if (idle.cursor_y >= game.max_grid_y) idle.cursor_y = game.max_grid_y - 1;
+
+    // Calculamos el tamaño y los extremos de la pieza actual con su rotación
+    int8_t cells[CELLS_PER_SHAPE][2];
+    walls_shape_cells(idle.piece, idle.rotation, cells);
+    
+    int min_dx = 0, max_dx = 0;
+    int min_dy = 0, max_dy = 0;
+    
+    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+        if (cells[i][0] < min_dx) min_dx = cells[i][0];
+        if (cells[i][0] > max_dx) max_dx = cells[i][0];
+        if (cells[i][1] < min_dy) min_dy = cells[i][1];
+        if (cells[i][1] > max_dy) max_dy = cells[i][1];
+    }
+
+    // Restringimos el cursor para que ningún bloque de la pieza se salga de la pantalla
+    if (idle.cursor_x + min_dx < 0)                   idle.cursor_x = -min_dx;
+    if (idle.cursor_x + max_dx >= game.max_grid_x)    idle.cursor_x = game.max_grid_x - 1 - max_dx;
+    
+    if (idle.cursor_y + min_dy < 0)                   idle.cursor_y = -min_dy;
+    if (idle.cursor_y + max_dy >= game.max_grid_y)    idle.cursor_y = game.max_grid_y - 1 - max_dy;
 }
 
 static void process_inputs(QueueHandle_t events, bool *back_to_menu) {
