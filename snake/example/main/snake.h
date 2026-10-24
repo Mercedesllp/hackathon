@@ -5,6 +5,7 @@
 #include "buttons.h"
 #include "walls.h"
 
+#define START_LIVES   3
 #define SQUARE_SIZE   4
 #define WALL_SIZE     1
 #define MAX_TAIL      200
@@ -34,6 +35,7 @@ typedef struct {
     int tail_x[MAX_TAIL];
     int tail_y[MAX_TAIL];
     int apple_x, apple_y;
+    int lives; 
 
     bool game_over;
     bool game_over_notified;

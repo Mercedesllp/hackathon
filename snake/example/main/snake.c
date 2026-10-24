@@ -48,6 +48,7 @@ void snake_reset_game(GameState *g, bool is_multiplayer, bool starts_with_snake)
     g->dir_x = 1;
     g->dir_y = 0;
     g->score = 0;
+    g->lives = START_LIVES;
     g->apples_eaten_here = 0;
     g->cola_visible = 0;
 
@@ -106,6 +107,36 @@ static void resolve_new_direction(GameState *g) {
     }
 }
 
+static void lose_life(GameState *g) {
+    g->lives--;
+
+    if (g->lives <= 0) {
+        g->lives = 0;
+        g->game_over = true;
+        if (g->audio_ok) wifi_audio_play_tone(150, 400);
+        return;
+    }
+
+    if (g->audio_ok) wifi_audio_play_tone(200, 250);
+
+    // Reaparece en el centro, o en una celda libre si hay una pared construida ahí
+    int gx = g->max_grid_x / 2;
+    int gy = g->max_grid_y / 2;
+    for (int i = 0; i < 100 && walls_hit(gx, gy); i++) {
+        gx = esp_random() % g->max_grid_x;
+        gy = esp_random() % g->max_grid_y;
+    }
+    g->x = WALL_SIZE + gx * SQUARE_SIZE;
+    g->y = WALL_SIZE + gy * SQUARE_SIZE;
+    g->dir_x = 1;
+    g->dir_y = 0;
+
+    // Conserva el score, pero la cola se vuelve a "crecer" paso a paso
+    // (snake_step ya incrementa cola_visible hasta llegar a score)
+    g->cola_visible = 0;
+    g->entry_steps_left = 0;
+}
+
 static void check_walls(GameState *g) {
     int gx = (g->x - WALL_SIZE) / SQUARE_SIZE;
     int gy = (g->y - WALL_SIZE) / SQUARE_SIZE;
@@ -146,9 +177,8 @@ static void check_walls(GameState *g) {
             if (g->audio_ok) wifi_audio_play_tone(440, 150); 
         }
     } else {
-        g->game_over = true;
-        if (g->audio_ok) wifi_audio_play_tone(150, 400);
-    }
+        lose_life(g);
+    } 
 }
 
 void snake_update_portals(GameState *g) {
@@ -175,44 +205,42 @@ void snake_step(GameState *g) {
 
     if (g->entry_steps_left > 0) g->entry_steps_left--;
 
+    int lives_before = g->lives;
     check_walls(g);
+    if (g->lives != lives_before || g->game_over || !g->snake_is_here) return;
 
-    if (!g->game_over && g->snake_is_here) {
-        int gx = (g->x - WALL_SIZE) / SQUARE_SIZE;
-        int gy = (g->y - WALL_SIZE) / SQUARE_SIZE;
-        if (walls_hit(gx, gy)) {
-            g->game_over = true;
-            if (g->audio_ok) wifi_audio_play_tone(150, 400);
-        }
+    // Choque con pared construida
+    int gx = (g->x - WALL_SIZE) / SQUARE_SIZE;
+    int gy = (g->y - WALL_SIZE) / SQUARE_SIZE;
+    if (walls_hit(gx, gy)) {
+        lose_life(g);
+        return;
     }
 
-    if (!g->game_over && g->snake_is_here) {
-        // Colisión con manzana
-        if (g->x == g->apple_x && g->y == g->apple_y) {
-            if (g->score < MAX_TAIL) g->score++;
-            g->apples_eaten_here++;
-            if (g->audio_ok) wifi_audio_play_tone(880, 50);
-            snake_place_apple(g);
-        }
+    // Manzana
+    if (g->x == g->apple_x && g->y == g->apple_y) {
+        if (g->score < MAX_TAIL) g->score++;
+        g->apples_eaten_here++;
+        if (g->audio_ok) wifi_audio_play_tone(880, 50);
+        snake_place_apple(g);
+    }
 
-        // Actualizar cola
-        if (g->cola_visible < g->score) g->cola_visible++;
-        for (int i = g->cola_visible - 1; i > 0; i--) {
-            g->tail_x[i] = g->tail_x[i - 1];
-            g->tail_y[i] = g->tail_y[i - 1];
-        }
-        if (g->cola_visible > 0) {
-            g->tail_x[0] = prev_x;
-            g->tail_y[0] = prev_y;
-        }
+    // Cola
+    if (g->cola_visible < g->score) g->cola_visible++;
+    for (int i = g->cola_visible - 1; i > 0; i--) {
+        g->tail_x[i] = g->tail_x[i - 1];
+        g->tail_y[i] = g->tail_y[i - 1];
+    }
+    if (g->cola_visible > 0) {
+        g->tail_x[0] = prev_x;
+        g->tail_y[0] = prev_y;
+    }
 
-        // Colisión consigo misma
-        for (int i = 0; i < g->cola_visible; i++) {
-            if (g->x == g->tail_x[i] && g->y == g->tail_y[i]) {
-                g->game_over = true;
-                if (g->audio_ok) wifi_audio_play_tone(150, 400);
-                break;
-            }
+    // Choque consigo misma
+    for (int i = 0; i < g->cola_visible; i++) {
+        if (g->x == g->tail_x[i] && g->y == g->tail_y[i]) {
+            lose_life(g);
+            return;
         }
     }
 }
@@ -265,8 +293,12 @@ void snake_render_here(const GameState *g) {
     for (int i = 0; i < g->cola_visible; i++) {
         display_fill_rect(g->tail_x[i], g->tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);
     }
-}
 
+    // Vidas
+    for (int i = 0; i < g->lives; i++) {
+        display_fill_rect(4 + i * 6, 3, 3, 3, true);
+    }
+}
 void snake_render_game_over(const GameState *g) {
     display_text(37, 20, "GAME OVER", false);
     char final_score[16];
