@@ -702,6 +702,119 @@ static void render_idle(void) {
         }
     }
 }
+static bool run_math_minigame(void) {
+    // 1. Elegir 3 números al azar entre 0 y 20
+    int a = (int)(esp_random() % 21);
+    int b = (int)(esp_random() % 21);
+    int c = (int)(esp_random() % 21);
+
+    // 2. Elegir 2 operaciones al azar (0 = '+', 1 = '-')
+    int op1_type = (int)(esp_random() % 2);
+    int op2_type = (int)(esp_random() % 2);
+
+    // Resolver la cuenta paso a paso
+    int intermediate = (op1_type == 0) ? (a + b) : (a - b);
+    int correct_answer = (op2_type == 0) ? (intermediate + c) : (intermediate - c);
+
+    // Formatear el texto de la cuenta (ej: "12 + 5 - 3 = ?")
+    char expr_str[32];
+    snprintf(expr_str, sizeof(expr_str), "%d %c %d %c %d = ?", 
+             a, op1_type == 0 ? '+' : '-', 
+             b, op2_type == 0 ? '+' : '-', 
+             c);
+
+    // 3. Generar 3 opciones: la correcta y dos señuelos (resultado +/- uno de los números)
+    int options[3];
+    int correct_slot = (int)(esp_random() % 3); // Dónde va la respuesta correcta (0, 1 o 2)
+
+    options[correct_slot] = correct_answer;
+
+    // Elegir qué número usar como "offset" para los señuelos
+    int offset_vals[3] = {a, b > 0 ? b : 1, c > 0 ? c : 2}; 
+    int decoy_offset = offset_vals[esp_random() % 3];
+    if (decoy_offset == 0) decoy_offset = 3; // Evitar offset 0
+
+    // Rellenar las otras dos opciones con variaciones lógicas
+    int decoy_idx = 0;
+    for (int i = 0; i < 3; i++) {
+        if (i == correct_slot) continue;
+        
+        // Un señuelo suma el offset, el otro lo resta (o variaciones)
+        if (decoy_idx == 0) {
+            options[i] = correct_answer + decoy_offset;
+        } else {
+            options[i] = correct_answer - decoy_offset;
+        }
+        decoy_idx++;
+    }
+
+    // Si por mala suerte dos opciones quedaron iguales, forzamos un ajuste
+    if (options[0] == options[1]) options[1] += 1;
+    if (options[1] == options[2]) options[2] += 2;
+
+    // 4. Bucle de espera de respuesta del usuario (A, B o C con KEY1, KEY2, KEY3)
+    QueueHandle_t q = buttons_event_queue();
+    xQueueReset(q);
+
+    while (1) {
+        // Seguridad: Si vuelve la serpiente, cancelamos
+        receive_messages();
+        if (game.snake_is_here) {
+            return false; 
+        }
+
+        // Renderizar la cuenta y las opciones en la pantalla LCD
+        if (game.display_ok) {
+            display_clear();
+            display_text(0, 0, "¡CALCULO RAPIDO!", true);
+            display_text(0, 14, expr_str, false);
+
+            char opt_line[24];
+            snprintf(opt_line, sizeof(opt_line), "A) %d", options[0]);
+            display_text(0, 28, opt_line, false);
+
+            snprintf(opt_line, sizeof(opt_line), "B) %d", options[1]);
+            display_text(0, 38, opt_line, false);
+
+            snprintf(opt_line, sizeof(opt_line), "C) %d", options[2]);
+            display_text(0, 48, opt_line, false);
+
+            display_flush();
+        }
+
+        // Leer botones de respuesta (KEY1 = A, KEY2 = B, KEY3 = C)
+        button_event_t ev;
+        if (xQueueReceive(q, &ev, pdMS_TO_TICKS(50)) == pdTRUE) {
+            if (ev.pressed) {
+                int chosen_opt = -1;
+                if (ev.id == BTN_KEY1) chosen_opt = 0;
+                else if (ev.id == BTN_KEY2) chosen_opt = 1;
+                else if (ev.id == BTN_KEY3) chosen_opt = 2;
+
+                if (chosen_opt != -1) {
+                    bool ok = (chosen_opt == correct_slot);
+                    if (ok) {
+                        if (game.audio_ok) wifi_audio_play_tone(880, 150);
+                        audio_play_tone(880, 150);
+                    } else {
+                        if (game.audio_ok) wifi_audio_play_tone(220, 300);
+                        audio_play_tone(220, 300);
+                    }
+
+                    // Mostrar resultado brevemente
+                    if (game.display_ok) {
+                        display_clear();
+                        display_text(0, 20, ok ? "¡CORRECTO! +1 Bloque" : "INCORRECTO :(", true);
+                        display_flush();
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+
+                    return ok; // Devuelve true si acertó, false si erró
+                }
+            }
+        }
+    }
+}
 
 static bool run_fishing_minigame(void) {
     int target_y = 16;       // Posición inicial de la zona objetivo
@@ -920,13 +1033,13 @@ void app_main(void) {
                         check_self_collision();
                     }
                 } else {
-                    // --- ACÁ ES DONDE VA EL BLOQUE DE LA PESCA ---
+                    // Si no tenemos pieza, arrancamos el desafío matemático automático
                     if (!idle.has_piece) {
-                        bool fished_ok = run_fishing_minigame();
+                        bool math_ok = run_math_minigame();
                         
-                        if (fished_ok) {
+                        if (math_ok) {
                             idle.piece = walls_bag_next();
-                            idle.has_piece = true; // ¡Ganaste el bloque soplando!
+                            idle.has_piece = true; // ¡Ganaste el bloque resolviendo la cuenta!
                         }
                     }
                 }
