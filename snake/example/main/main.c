@@ -93,6 +93,7 @@ typedef struct {
     TickType_t last_grant;  
     
     // Control del Quiz
+    bool has_piece;
     bool in_quiz;
     int current_q;
 
@@ -251,6 +252,8 @@ static void reset_game(void) {
     idle.piece = walls_bag_next();
     idle.next = walls_bag_next();
     idle.rotation = 0;
+    idle.has_piece = false; // <--- Arrancás sin pieza, obligado a hacer el puzle
+    idle.in_quiz = false;
     idle.last_grant = xTaskGetTickCount();
     idle.adv_walls_count = 0; 
 }
@@ -318,15 +321,15 @@ static void idle_handle_button(button_id_t id) {
                 bool ok = (i == quiz[idle.current_q].correct);
                 if (ok) {
                     if (game.audio_ok) wifi_audio_play_tone(880, 150);
-                    walls_grant_piece(); // ¡Ganaste una pieza por responder bien!
+                    idle.piece = walls_bag_next();
+                    idle.has_piece = true; // ¡Ganaste la pieza! Vuelves al tablero para colocarla
                 } else {
                     if (game.audio_ok) wifi_audio_play_tone(220, 300);
                 }
                 
-                // Mostramos resultado brevemente en pantalla
                 if (game.display_ok) {
                     display_clear();
-                    display_text(0, 20, ok ? "¡CORRECTO! +1 Bloque" : "INCORRECTO :(", true);
+                    display_text(0, 20, ok ? "¡CORRECTO! Coloca tu bloque" : "INCORRECTO :(", true);
                     display_flush();
                 }
                 vTaskDelay(pdMS_TO_TICKS(1000));
@@ -335,39 +338,40 @@ static void idle_handle_button(button_id_t id) {
                 return;
             }
         }
-        return; // Ignoramos otros botones mientras estamos en el quiz
+        return;
     }
+
     switch (id) {
-        case BTN_UP:    idle.cursor_x--; break;
-        case BTN_RIGHT: idle.cursor_y--; break;
-        case BTN_DOWN:  idle.cursor_x++; break;
-        case BTN_LEFT:  idle.cursor_y++; break;
-        case BTN_KEY2:  idle.rotation = (idle.rotation + 1) % NUM_ROTATIONS; break;
-        case BTN_KEY3:  idle_drop_piece(); break;
+        case BTN_UP:    if (idle.has_piece) idle.cursor_x--; break;
+        case BTN_RIGHT: if (idle.has_piece) idle.cursor_y--; break;
+        case BTN_DOWN:  if (idle.has_piece) idle.cursor_x++; break;
+        case BTN_LEFT:  if (idle.has_piece) idle.cursor_y++; break;
+        case BTN_KEY2:  if (idle.has_piece) idle.rotation = (idle.rotation + 1) % NUM_ROTATIONS; break;
+        case BTN_KEY3:  
+            // KEY3 ahora solo tira la pieza al rival si ya la tenés colocada
+            if (idle.has_piece) {
+                idle_drop_piece(); 
+            }
+            break;
         default: break;
     }
 
-    // Calculamos el tamaño y los extremos de la pieza actual con su rotación
-    int8_t cells[CELLS_PER_SHAPE][2];
-    walls_shape_cells(idle.piece, idle.rotation, cells);
-    
-    int min_dx = 0, max_dx = 0;
-    int min_dy = 0, max_dy = 0;
-    
-    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
-        if (cells[i][0] < min_dx) min_dx = cells[i][0];
-        if (cells[i][0] > max_dx) max_dx = cells[i][0];
-        if (cells[i][1] < min_dy) min_dy = cells[i][1];
-        if (cells[i][1] > max_dy) max_dy = cells[i][1];
+    // Límites de la pantalla con margen de 4 píxeles
+    if (idle.has_piece) {
+        int8_t cells[CELLS_PER_SHAPE][2];
+        walls_shape_cells(idle.piece, idle.rotation, cells);
+        int min_dx = 0, max_dx = 0, min_dy = 0, max_dy = 0;
+        for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+            if (cells[i][0] < min_dx) min_dx = cells[i][0];
+            if (cells[i][0] > max_dx) max_dx = cells[i][0];
+            if (cells[i][1] < min_dy) min_dy = cells[i][1];
+            if (cells[i][1] > max_dy) max_dy = cells[i][1];
+        }
+        if (idle.cursor_x + min_dx < 1)                   idle.cursor_x = 1 - min_dx;
+        if (idle.cursor_x + max_dx >= game.max_grid_x - 1) idle.cursor_x = game.max_grid_x - 2 - max_dx;
+        if (idle.cursor_y + min_dy < 1)                   idle.cursor_y = 1 - min_dy;
+        if (idle.cursor_y + max_dy >= game.max_grid_y - 1) idle.cursor_y = game.max_grid_y - 2 - max_dy;
     }
-
-    // LÍMITES CON MARGEN DE 4 PÍXELES (1 CELDA) DE LAS PAREDES:
-    // Cambiamos el límite inferior de 0 a 1, y el superior de max-1 a max-2
-    if (idle.cursor_x + min_dx < 1)                   idle.cursor_x = 1 - min_dx;
-    if (idle.cursor_x + max_dx >= game.max_grid_x - 1) idle.cursor_x = game.max_grid_x - 2 - max_dx;
-    
-    if (idle.cursor_y + min_dy < 1)                   idle.cursor_y = 1 - min_dy;
-    if (idle.cursor_y + max_dy >= game.max_grid_y - 1) idle.cursor_y = game.max_grid_y - 2 - max_dy;
 }
 
 static void process_inputs(QueueHandle_t events, bool *back_to_menu) {
@@ -839,7 +843,14 @@ void app_main(void) {
                         update_tail_positions(prev_x, prev_y);
                         check_self_collision();
                     }
-                } 
+                } else {
+                    // Si no tenemos pieza y no estamos en el puzle, se abre al instante automáticamente
+                    if (!idle.has_piece && !idle.in_quiz) {
+                        idle.in_quiz = true;
+                        idle.current_q = esp_random() % NUM_QUESTIONS;
+                        if (game.audio_ok) wifi_audio_play_tone(523, 100);
+                    }
+                }
             }
 
             // --- NUEVO: AVISAR MUERTE A LA OTRA PLACA ---
