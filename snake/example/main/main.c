@@ -449,7 +449,31 @@ static void receive_messages(void) {
                 break;
             case MSG_WALL:
                 if (m.shape < NUM_SHAPES) {
-                    safe_walls_add(m.shape, m.rotation, m.x, m.y);
+                    // 1. Agregamos la pared normal
+                    walls_add(m.shape, m.rotation, m.x, m.y);
+                    
+                    // 2. Verificamos si algún bloque de la pieza toca la manzana
+                    int8_t cells[CELLS_PER_SHAPE][2];
+                    walls_shape_cells(m.shape, m.rotation, cells);
+                    
+                    int apple_gx = (game.apple_x - WALL_SIZE) / SQUARE_SIZE;
+                    int apple_gy = (game.apple_y - WALL_SIZE) / SQUARE_SIZE;
+                    
+                    bool apple_covered = false;
+                    for (int i = 0; i < CELLS_PER_SHAPE; i++) {
+                        int cell_gx = m.x + cells[i][0];
+                        int cell_gy = m.y + cells[i][1];
+                        if (cell_gx == apple_gx && cell_gy == apple_gy) {
+                            apple_covered = true;
+                            break;
+                        }
+                    }
+                    
+                    // 3. Si la tapa, la manzana reaparece al instante en otro lado
+                    if (apple_covered) {
+                        place_apple();
+                    }
+
                     if (game.audio_ok) wifi_audio_play_tone(330, 100);
                 }
                 break;
