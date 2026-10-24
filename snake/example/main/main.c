@@ -11,8 +11,14 @@
 #include "display.h"
 #include "board.h" 
 #include "sdkconfig.h"
+#include "snake.h"
+#include "radio.h"
+
+#define EMPIEZA_CON_SERPIENTE 0
 
 static const char *TAG = "demo";
+
+
 
 void app_main(void)
 {
@@ -33,6 +39,7 @@ void app_main(void)
     }
 
     bool audio_ok = audio_init() == ESP_OK;
+    bool radio_ok = radio_init() == ESP_OK;
     if (audio_ok) {
         const int notes[] = {523, 659, 784};
         for (int i = 0; i < 3; i++) {
@@ -44,10 +51,6 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(500));
 
     QueueHandle_t events = buttons_event_queue();
-
-    // -- CONFIGURACIÓN DEL JUEGO --
-    const int SQUARE_SIZE = 4;
-    const int WALL_SIZE = 1;
     
     // Calculamos el tamaño del tablero en "grillas" de 4x4 para el spawn 
     int max_grid_x = (BOARD_LCD_WIDTH - 2 * WALL_SIZE) / SQUARE_SIZE;
@@ -61,10 +64,12 @@ void app_main(void)
     int dir_y = 0;
     
     bool game_over = false; 
+    bool snake_is_here = EMPIEZA_CON_SERPIENTE; // Empieza en la placa 1. La placa 2 debería arrancar en false.
+    bool portals_open = false;
 
     // Variables de la Serpiente
     int score = 0; 
-    const int MAX_TAIL = 200; // Límite máximo de la cola
+    int cola_visible = 0;
     int tail_x[MAX_TAIL];
     int tail_y[MAX_TAIL];
 
@@ -94,9 +99,11 @@ void app_main(void)
                     dir_x = 1;
                     dir_y = 0;
                     score = 0;
+                    cola_visible = 0;
                     apple_x = WALL_SIZE + (esp_random() % max_grid_x) * SQUARE_SIZE;
                     apple_y = WALL_SIZE + (esp_random() % max_grid_y) * SQUARE_SIZE;
                     game_over = false;
+                    snake_is_here = true; // Aseguramos que arranque en esta placa
                 } else {
                     // Sumar votos según el botón presionado
                     switch (ev.id) {
@@ -117,83 +124,99 @@ void app_main(void)
             }
         }
 
-        // 2. PROCESAR EL RESULTADO DE LA VOTACIÓN
+        // 2. PROCESAR LA LÓGICA DEL JUEGO
         if (!game_over) {
-            // --- RESOLUCIÓN DE LA VOTACIÓN DE INPUTS ---
-            int max_votos = 0;
-            int nuevo_dir_x = dir_x;
-            int nuevo_dir_y = dir_y;
+            portals_open = (score >= 2); // Se abren los portales a los 2 puntos
 
-            // Evaluamos al ganador descartando movimientos inválidos (180 grados)
-            if (votos_arriba > max_votos && dir_y == 0) {
-                max_votos = votos_arriba;
-                nuevo_dir_x = 0; nuevo_dir_y = -1;
-            }
-            if (votos_abajo > max_votos && dir_y == 0) {
-                max_votos = votos_abajo;
-                nuevo_dir_x = 0; nuevo_dir_y = 1;
-            }
-            if (votos_izq > max_votos && dir_x == 0) {
-                max_votos = votos_izq;
-                nuevo_dir_x = -1; nuevo_dir_y = 0;
-            }
-            if (votos_der > max_votos && dir_x == 0) {
-                max_votos = votos_der;
-                nuevo_dir_x = 1; nuevo_dir_y = 0;
-            }
+            if (snake_is_here) {
+                // --- RESOLUCIÓN DE LA VOTACIÓN DE INPUTS ---
+                int max_votos = 0;
+                int nuevo_dir_x = dir_x;
+                int nuevo_dir_y = dir_y;
 
-            // Aplicar la dirección ganadora (si hubo al menos un voto válido)
-            if (max_votos > 0) {
-                dir_x = nuevo_dir_x;
-                dir_y = nuevo_dir_y;
-            }
-            // -------------------------------------------
+                if (votos_arriba > max_votos && dir_y == 0) { max_votos = votos_arriba; nuevo_dir_x = 0; nuevo_dir_y = -1; }
+                if (votos_abajo > max_votos && dir_y == 0) { max_votos = votos_abajo; nuevo_dir_x = 0; nuevo_dir_y = 1; }
+                if (votos_izq > max_votos && dir_x == 0) { max_votos = votos_izq; nuevo_dir_x = -1; nuevo_dir_y = 0; }
+                if (votos_der > max_votos && dir_x == 0) { max_votos = votos_der; nuevo_dir_x = 1; nuevo_dir_y = 0; }
 
-            // 1. Guardar la posición anterior para mover la cola
-            int prev_x = square_x;
-            int prev_y = square_y;
+                if (max_votos > 0) {
+                    dir_x = nuevo_dir_x;
+                    dir_y = nuevo_dir_y;
+                }
+                // -------------------------------------------
 
-            // 2. Mover la cabeza
-            square_x += dir_x * SQUARE_SIZE;
-            square_y += dir_y * SQUARE_SIZE;
+                int prev_x = square_x;
+                int prev_y = square_y;
 
-            // 3. Chequeo de paredes usando las coordenadas de la grilla
-            int current_grid_x = (square_x - WALL_SIZE) / SQUARE_SIZE;
-            int current_grid_y = (square_y - WALL_SIZE) / SQUARE_SIZE;
+                square_x += dir_x * SQUARE_SIZE;
+                square_y += dir_y * SQUARE_SIZE;
 
-            if (current_grid_x < 0 || current_grid_x >= max_grid_x || 
-                current_grid_y < 0 || current_grid_y >= max_grid_y) {
-                
-                game_over = true;
-                if (audio_ok) audio_play_tone(150, 400); // Sonido grave al chocar
-                
+                int current_grid_x = (square_x - WALL_SIZE) / SQUARE_SIZE;
+                int current_grid_y = (square_y - WALL_SIZE) / SQUARE_SIZE;
+
+                // Chequeo de bordes
+                if (current_grid_x < 0 || current_grid_x >= max_grid_x || 
+                    current_grid_y < 0 || current_grid_y >= max_grid_y) {
+                    
+                    if (portals_open) {
+
+                        snake_is_here = false; // La serpiente se va a la otra placa
+                        
+                        // Mandamos la posición TAL CUAL quedó: fuera de rango.
+                        // La coordenada que se pasó dice por qué borde salió, y
+                        // snake_arrive() en la otra placa la pasa al borde opuesto.
+                        message_t mensaje = {
+                            .x = current_grid_x,
+                            .y = current_grid_y,
+                            .score = score,
+                        };
+                        
+                        radio_send(&mensaje);
+
+                        if (audio_ok) audio_play_tone(440, 150); 
+                    } else {
+                        game_over = true; // Chocó contra la pared
+                        if (audio_ok) audio_play_tone(150, 400); 
+                    }
+                    
+                } else {
+                    // Colisión con manzana
+                    if (square_x == apple_x && square_y == apple_y) {
+                        if (score < MAX_TAIL) score++;
+                        if (audio_ok) audio_play_tone(880, 50); 
+                        apple_x = WALL_SIZE + (esp_random() % max_grid_x) * SQUARE_SIZE;
+                        apple_y = WALL_SIZE + (esp_random() % max_grid_y) * SQUARE_SIZE;
+                    }
+
+                    // Actualizar posiciones de la cola
+                    if (cola_visible < score) cola_visible++;
+
+                    for (int i = cola_visible - 1; i > 0; i--) {
+                        tail_x[i] = tail_x[i-1];
+                        tail_y[i] = tail_y[i-1];
+                    }
+                    if (cola_visible > 0) {
+                        tail_x[0] = prev_x;
+                        tail_y[0] = prev_y;
+                    }
+
+                    // Colisión con sí mismo
+                    for (int i = 0; i < cola_visible; i++) {
+                        if (square_x == tail_x[i] && square_y == tail_y[i]) {
+                            game_over = true;
+                            if (audio_ok) audio_play_tone(150, 400);
+                        }
+                    }
+                }
             } else {
-                // 4. Chequear colisión con la manzana
-                if (square_x == apple_x && square_y == apple_y) {
-                    if (score < MAX_TAIL) score++; // Suma punto e incrementa cola
-                    
-                    if (audio_ok) audio_play_tone(880, 50); // "Beep" agudo de comer
-                    
-                    // Tirar una manzana nueva
-                    apple_x = WALL_SIZE + (esp_random() % max_grid_x) * SQUARE_SIZE;
-                    apple_y = WALL_SIZE + (esp_random() % max_grid_y) * SQUARE_SIZE;
-                }
 
-                // 5. Actualizar las posiciones de toda la cola
-                for (int i = score - 1; i > 0; i--) {
-                    tail_x[i] = tail_x[i-1];
-                    tail_y[i] = tail_y[i-1];
-                }
-                if (score > 0) {
-                    tail_x[0] = prev_x;
-                    tail_y[0] = prev_y;
-                }
-
-                // 6. Colisión con sí mismo (te mordes la cola)
-                for (int i = 0; i < score; i++) {
-                    if (square_x == tail_x[i] && square_y == tail_y[i]) {
-                        game_over = true;
-                        if (audio_ok) audio_play_tone(150, 400);
+                // ESTADO DE ESPERA: La serpiente está en la placa de tu amigo
+                message_t m;
+                if (radio_receive(&m)) {
+                    if (snake_arrive(&m, &square_x, &square_y, &dir_x, &dir_y)){
+                        snake_is_here = true;
+                        score = m.score;
+                        cola_visible = 0;
                     }
                 }
             }
@@ -201,45 +224,39 @@ void app_main(void)
 
         // Renderizar en pantalla
         if (display_ok) {
-            display_clear(); 
+            display_clear(); //[cite: 63]
             
-            // Paredes
-            display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true); 
-            display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true); 
-            display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
-            display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); 
-            
-            if (game_over) {
-                display_text(37, 20, "GAME OVER", false); 
-                
-                // Mostrar puntaje final
-                char final_score[16];
-                snprintf(final_score, sizeof(final_score), "Puntos: %d", score);
-                display_text(37, 36, final_score, false);
-
-            } else {
-                // Dibujar la Manzana (Cuerpo de 4x4, y apagamos 1x1 px en el medio para darle ese "punto")
-                display_fill_rect(apple_x, apple_y, SQUARE_SIZE, SQUARE_SIZE, true); 
-                display_fill_rect(apple_x + 1, apple_y + 1, 1, 1, false); 
-
-                // Dibujar Cabeza del jugador
-                display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); 
-                
-                // Dibujar la Cola del jugador
-                for (int i = 0; i < score; i++) {
-                    display_fill_rect(tail_x[i], tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);
-                }
-
-                // Imprimir el puntaje actual arriba a la izquierda
-                char score_str[16];
-                snprintf(score_str, sizeof(score_str), "Pts:%d", score);
-                display_text(4, 4, score_str, false);
+            // Paredes (solo se dibujan si no se abrieron los portales)
+            if (!portals_open) {
+                display_fill_rect(0, 0, BOARD_LCD_WIDTH, WALL_SIZE, true); //[cite: 58, 63]
+                display_fill_rect(0, BOARD_LCD_HEIGHT - WALL_SIZE, BOARD_LCD_WIDTH, WALL_SIZE, true); //[cite: 58, 63]
+                display_fill_rect(0, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 58, 63]
+                display_fill_rect(BOARD_LCD_WIDTH - WALL_SIZE, 0, WALL_SIZE, BOARD_LCD_HEIGHT, true); //[cite: 58, 63]
             }
             
-            display_flush(); 
+            if (game_over) {
+                display_text(37, 20, "GAME OVER", false); //[cite: 63]
+                char final_score[16];
+                snprintf(final_score, sizeof(final_score), "Puntos: %d", score);
+                display_text(37, 36, final_score, false); //[cite: 63]
+                
+            } else if (snake_is_here) {
+                // Dibujar Manzana y Jugador solo si están en esta placa
+                display_fill_rect(apple_x, apple_y, SQUARE_SIZE, SQUARE_SIZE, true); //[cite: 63]
+                display_fill_rect(apple_x + 1, apple_y + 1, 1, 1, false); //[cite: 63]
+
+                display_fill_rect(square_x, square_y, SQUARE_SIZE, SQUARE_SIZE, true); //[cite: 63]
+                for (int i = 0; i < cola_visible; i++) {
+                    display_fill_rect(tail_x[i], tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true); //[cite: 63]
+                }
+            } else {
+                // Feedback mientras el otro jugador tiene el turno
+                display_text(10, 28, "ESPERANDO A AMIGO", false); //[cite: 63]
+            }
+            
+            display_flush(); //[cite: 63]
         }
 
-        // Espera para siguiente frame (200ms -> ~5 FPS. Podés bajarlo para más dificultad)
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
     }
 }

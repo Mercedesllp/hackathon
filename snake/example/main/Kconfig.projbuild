@@ -14,4 +14,11 @@ menu "Hackathon board demo"
         help
             Enable if the text on the OLED appears upside down.
 
+    config HACK_SNAKE_STARTS_HERE
+        bool "The snake starts on this board"
+        default y
+        help
+            Enable on ONE board only. The other board starts waiting for
+            the snake to cross over.
+
 endmenu
