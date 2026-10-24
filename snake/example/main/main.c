@@ -51,6 +51,9 @@ typedef struct {
     bool portals_open;
     int wall_anim_step;
 
+    // Estado para pausar el juego y mostrar el menú
+    bool in_wall_menu;
+
     // Variables de la "puertita" de entrada
     int entry_steps_left;
     int entry_door_x;
@@ -208,6 +211,7 @@ static void reset_game(void)
     game.portals_open = false;
     game.wall_anim_step = 0;
     
+    game.in_wall_menu = false; // Iniciamos sin el menú de paredes activo
     game.entry_steps_left = 0;
 
     game.snake_is_here = !game.is_multiplayer || empieza_con_serpiente;
@@ -274,7 +278,6 @@ static void check_walls(void)
         return; // dentro del tablero
     }
 
-    // --- LÓGICA DE COLISIÓN FÍSICA PRECISA ---
     int w = BOARD_LCD_WIDTH;
     int h = BOARD_LCD_HEIGHT;
     int step = game.wall_anim_step;
@@ -314,14 +317,18 @@ static void check_walls(void)
 
             if (game.audio_ok) wifi_audio_play_tone(440, 150);
         } else {
-            // 1 JUGADOR: aparece por el borde opuesto
+            // 1 JUGADOR: En vez de reaparecer, activamos el placeholder del menú
+            game.in_wall_menu = true;
+            
+            // Calculamos desde ahora dónde va a estar esperando la serpiente 
+            // cuando terminemos de poner la pared
             if (gx < 0)                    game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
             else if (gx >= game.max_grid_x) game.x = WALL_SIZE;
 
             if (gy < 0)                    game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
             else if (gy >= game.max_grid_y) game.y = WALL_SIZE;
 
-            if (game.audio_ok) wifi_audio_play_tone(660, 150);
+            if (game.audio_ok) wifi_audio_play_tone(440, 150); // Sonido de salida
         }
     } else {
         game.game_over = true;
@@ -375,7 +382,6 @@ static void render_walls(void)
     int horiz_w = (w / 2) - step;
     int vert_h = (h / 2) - (step / 2);
 
-    // Dibuja las paredes sólidas normales
     if (horiz_w > 0) {
         display_fill_rect(0, 0, horiz_w, WALL_SIZE, true);
         display_fill_rect((w / 2) + step, 0, horiz_w, WALL_SIZE, true);
@@ -390,7 +396,6 @@ static void render_walls(void)
         display_fill_rect(w - WALL_SIZE, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
     }
     
-    // --- DIBUJAR PUERTITA DE ENTRADA (AGUJERO FANTASMA) ---
     if (game.entry_steps_left > 0) {
         int hole_x = game.entry_door_x;
         int hole_y = game.entry_door_y;
@@ -398,18 +403,15 @@ static void render_walls(void)
         int hole_h = SQUARE_SIZE;
 
         if (game.entry_dir_x != 0) { 
-            // Entra por izquierda o derecha
             hole_w = WALL_SIZE;
             if (game.entry_dir_x == 1) hole_x = 0; 
             else hole_x = w - WALL_SIZE;           
         } else { 
-            // Entra por arriba o abajo
             hole_h = WALL_SIZE;
             if (game.entry_dir_y == 1) hole_y = 0; 
             else hole_y = h - WALL_SIZE;           
         }
         
-        // 'false' borra los pixeles de la pared, creando un agujero temporal
         display_fill_rect(hole_x, hole_y, hole_w, hole_h, false); 
     }
 }
@@ -461,7 +463,6 @@ void app_main(void)
     game.max_grid_x = (BOARD_LCD_WIDTH - 2 * WALL_SIZE) / SQUARE_SIZE;
     game.max_grid_y = (BOARD_LCD_HEIGHT - 2 * WALL_SIZE) / SQUARE_SIZE;
 
-    // BUCLE EXTERNO: Menú -> Juego -> Menú
     while (1) {
         int selected_mode = 1;
         ESP_ERROR_CHECK(menu_wait_for_start(events, game.display_ok, game.audio_ok, &selected_mode));
@@ -535,9 +536,40 @@ void app_main(void)
         while (!back_to_menu) {
             process_inputs(events, &back_to_menu);
 
+            // --- NUEVO ESTADO: MENÚ DE PONER PARED (Placeholder para testing 1 Jugador) ---
+            // --- NUEVO ESTADO: MENÚ DE PONER PARED ---
+            if (game.in_wall_menu) {
+                int nueva_pared_x, nueva_pared_y;
+                bool nueva_pared_vert;
+
+                // Delegamos todo el control al menú visual
+                menu_place_wall(events, game.display_ok, game.audio_ok, 
+                                &nueva_pared_x, &nueva_pared_y, &nueva_pared_vert);
+                
+                // Acá a futuro guardaremos (nueva_pared_x, nueva_pared_y, nueva_pared_vert) 
+                // en el "mapa adversario" y se lo mandaremos por radio.
+                
+                // Dejamos el estado de pausa y volvemos a jugar
+                game.in_wall_menu = false;
+                
+                // Reaparecemos abriendo la puertita
+                game.entry_steps_left = game.score + 1; 
+                game.entry_door_x = game.x;
+                game.entry_door_y = game.y;
+                game.entry_dir_x = game.dir_x;
+                game.entry_dir_y = game.dir_y;
+                
+                game.wall_anim_step = 0;
+                if (game.audio_ok) wifi_audio_play_tone(660, 150);
+                
+                // Reseteamos el reloj para que la serpiente no de un salto por el tiempo perdido
+                last_wake_time = xTaskGetTickCount();
+                continue; 
+            }
+
+            // --- LÓGICA NORMAL ---
             if (!game.game_over) {
                 
-                // Si la serpiente está entrando por la puertita, anulamos la apertura de portales normal
                 if (game.entry_steps_left > 0) {
                     game.portals_open = false;
                 } else {
@@ -559,14 +591,13 @@ void app_main(void)
                     game.x += game.dir_x * SQUARE_SIZE;
                     game.y += game.dir_y * SQUARE_SIZE;
                     
-                    // Restamos 1 paso a la puertita en cada movimiento
                     if (game.entry_steps_left > 0) {
                         game.entry_steps_left--;
                     }
 
                     check_walls();
 
-                    if (!game.game_over && game.snake_is_here) {
+                    if (!game.game_over && game.snake_is_here && !game.in_wall_menu) {
                         check_apple_collision();
                         update_tail_positions(prev_x, prev_y);
                         check_self_collision();
@@ -580,15 +611,12 @@ void app_main(void)
                                 game.snake_is_here = true;
                                 game.score = m.score;
                                 
-                                // INICIALIZAMOS LA PUERTITA FANTASMA
-                                // +1 porque cuenta la cabeza cruzando el muro
                                 game.entry_steps_left = game.score + 1; 
                                 game.entry_door_x = game.x;
                                 game.entry_door_y = game.y;
                                 game.entry_dir_x = game.dir_x;
                                 game.entry_dir_y = game.dir_y;
                                 
-                                // Cerramos todas las paredes al instante
                                 game.wall_anim_step = 0;
                                 
                                 if (game.audio_ok) wifi_audio_play_tone(660, 150);
@@ -599,7 +627,7 @@ void app_main(void)
             }
 
             // Renderizado
-            if (game.display_ok) {
+            if (game.display_ok && !game.in_wall_menu) {
                 display_clear();
                 render_walls();
 

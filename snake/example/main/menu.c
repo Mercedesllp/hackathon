@@ -199,3 +199,84 @@ pause_choice_t menu_pause(QueueHandle_t events, bool display_ok, bool audio_ok) 
         }
     }
 }
+
+void menu_place_wall(QueueHandle_t events, bool display_ok, bool audio_ok, int *wall_x, int *wall_y, bool *is_vertical) {
+    // Posición inicial al centro de la pantalla
+    int cx = 54; 
+    int cy = 28;
+    bool vert = false;     // Arranca horizontal
+    bool visible = true;
+    int blink_timer = 0;
+    
+    button_event_t ev;
+    // Limpiar la cola de eventos por si quedaron botones apretados
+    while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
+
+    while (1) {
+        // Leemos inputs con un delay de 50ms para que sirva de framerate
+        if (xQueueReceive(events, &ev, pdMS_TO_TICKS(50)) == pdTRUE) {
+            if (ev.pressed) {
+                // Mover la pared (saltos de 4 pixeles = 1 bloque de la serpiente)
+                if (ev.id == BTN_UP)    cy -= 4;
+                if (ev.id == BTN_DOWN)  cy += 4;
+                if (ev.id == BTN_LEFT)  cx -= 4;
+                if (ev.id == BTN_RIGHT) cx += 4;
+                
+                // Rotar con Botón 1
+                if (ev.id == BTN_KEY1) {
+                    vert = !vert;
+                    if (audio_ok) wifi_audio_play_tone(880, 50);
+                }
+                
+                // Confirmar con Botón 2
+                if (ev.id == BTN_KEY2) {
+                    if (audio_ok) wifi_audio_play_tone(1046, 150);
+                    *wall_x = cx;
+                    *wall_y = cy;
+                    *is_vertical = vert;
+                    return; // Salimos de la función y volvemos al juego
+                }
+            }
+        }
+
+        // Definir tamaño en píxeles (2x5 o 5x2 cuadraditos de 4px)
+        int w = vert ? 8 : 20;
+        int h = vert ? 20 : 8;
+
+        // Evitar que la pared se salga de los límites (1px de borde)
+        // Suponemos pantalla de 128x64
+        if (cx < 1) cx = 1;
+        if (cy < 1) cy = 1;
+        if (cx > 128 - 1 - w) cx = 128 - 1 - w; 
+        if (cy > 64 - 1 - h) cy = 64 - 1 - h;   
+
+        // Lógica de parpadeo (titila cada 150ms)
+        blink_timer += 50;
+        if (blink_timer >= 150) {
+            visible = !visible;
+            blink_timer = 0;
+        }
+
+        // Dibujo
+        if (display_ok) {
+            display_clear();
+            
+            // Dibujamos el marco exterior para tener referencia espacial
+            display_fill_rect(0, 0, 128, 1, true);
+            display_fill_rect(0, 63, 128, 1, true);
+            display_fill_rect(0, 0, 1, 64, true);
+            display_fill_rect(127, 0, 1, 64, true);
+
+            // Ayudamemoria
+            display_text(10, 5, "B1: ROTAR", false);
+            display_text(10, 50, "B2: PONER", false);
+
+            // Dibujar la pared fantasma si toca fotograma visible
+            if (visible) {
+                display_fill_rect(cx, cy, w, h, true);
+            }
+            
+            display_flush();
+        }
+    }
+}

@@ -6,7 +6,8 @@
 #include "freertos/queue.h"
 
 // Muestra la pantalla de inicio, el menú de selección de modo y bloquea hasta confirmar.
-esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_ok, int *selected_mode);
+void menu_place_wall(QueueHandle_t events, bool display_ok, bool audio_ok, int *wall_x, int *wall_y, bool *is_vertical);
+
 
 // Opciones de retorno del menú de pausa
 typedef enum {
