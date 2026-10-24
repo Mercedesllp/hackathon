@@ -49,6 +49,7 @@ void snake_reset_game(GameState *g, bool is_multiplayer, bool starts_with_snake)
     g->dir_y = 0;
     g->score = 0;
     g->lives = START_LIVES;
+    g->speed_boost_steps = 0;
     g->apples_eaten_here = 0;
     g->cola_visible = 0;
 
@@ -202,6 +203,7 @@ void snake_step(GameState *g) {
 
     g->x += g->dir_x * SQUARE_SIZE;
     g->y += g->dir_y * SQUARE_SIZE;
+    if (g->speed_boost_steps > 0) g->speed_boost_steps--;
 
     if (g->entry_steps_left > 0) g->entry_steps_left--;
 

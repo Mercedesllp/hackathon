@@ -52,6 +52,10 @@ static void receive_messages_2p(void) {
                 opponent_game_over = true;
                 break;
             default: break;
+            case MSG_POWER_SPEED:
+                s_game.speed_boost_steps = 30; // 30 pasos a toda velocidad (aprox 3 segundos)
+                if (s_game.audio_ok) sounds_play_tone(1200, 200); // Sonido agudo de alerta
+                break;
         }
     }
 }
@@ -73,6 +77,44 @@ static void render_multiplayer_end(const GameState *g, bool is_winner) {
     snprintf(final_score, sizeof(final_score), "Tus puntos: %d", g->score);
     display_text(16, 36, final_score, false);
     display_text(10, 52, "Btn 1 para salir", false);
+}
+
+static int choose_powerup(QueueHandle_t events, bool display_ok, bool audio_ok) {
+    int selection = 0; // 0 = Pared, 1 = Velocidad
+    button_event_t ev;
+
+    // Limpiamos la cola de botones por si quedó algo apretado del minijuego
+    while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
+
+    while (1) {
+        // Si llega la serpiente o alguien muere mientras elegimos, abortamos
+        if (poll_and_check_abort()) return -1;
+
+        if (xQueueReceive(events, &ev, pdMS_TO_TICKS(50)) == pdTRUE) {
+            if (ev.pressed) {
+                if (ev.id == BTN_UP || ev.id == BTN_DOWN) {
+                    selection = !selection;
+                    if (audio_ok) sounds_play_tone(440, 50); // Sonido cursor
+                } else if (ev.id == BTN_KEY1 || ev.id == BTN_KEY2) {
+                    if (audio_ok) sounds_play_tone(1046, 150); // Sonido confirmar
+                    return selection;
+                }
+            }
+        }
+
+        if (display_ok) {
+            display_clear();
+            display_text(30, 8, "PODER LISTO", false);
+            
+            if (selection == 0) display_text(15, 30, "> MANDAR PARED <", false);
+            else                display_text(27, 30, "MANDAR PARED", false);
+
+            if (selection == 1) display_text(15, 46, "> RAYO VELOZ <", false);
+            else                display_text(27, 46, "RAYO VELOZ", false);
+            
+            display_flush();
+        }
+    }
 }
 
 void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
@@ -120,7 +162,17 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
                 if (!block_placer_has_piece()) {
                     bool won = minigames_run_random(display_ok, audio_ok, poll_and_check_abort);
                     if (won) {
-                        block_placer_grant_piece();
+                        int choice = choose_powerup(events, display_ok, audio_ok);
+                        
+                        if (choice == 0) {
+                            // Eligió la pared: entra al block_placer
+                            block_placer_grant_piece();
+                        } else if (choice == 1) {
+                            // Eligió la velocidad: la manda directo por radio
+                            message_t msg = { .type = MSG_POWER_SPEED };
+                            radio_send(&msg);
+                        }
+                        // Si choice es -1, significa que llegó la serpiente y se canceló el menú
                     }
                     last_wake_time = xTaskGetTickCount();
                 }
@@ -155,6 +207,7 @@ void game_2p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
             display_flush();
         }
 
-        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(GAME_SPEED_MS));
+        int current_speed = (s_game.speed_boost_steps > 0) ? (GAME_SPEED_MS / 2) : GAME_SPEED_MS;
+        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(current_speed));
     }
 }

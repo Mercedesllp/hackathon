@@ -15,7 +15,8 @@ typedef enum {
     MSG_READY = 1,
     MSG_SNAKE = 2,
     MSG_WALL  = 3,
-    MSG_GAME_OVER
+    MSG_GAME_OVER = 4,
+    MSG_POWER_SPEED = 5
 } msg_type_t;
 
 typedef struct __attribute__((packed)) message {
@@ -36,6 +37,7 @@ typedef struct {
     int tail_y[MAX_TAIL];
     int apple_x, apple_y;
     int lives; 
+    int speed_boost_steps;
 
     bool game_over;
     bool game_over_notified;
