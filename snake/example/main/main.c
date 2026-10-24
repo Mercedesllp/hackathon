@@ -218,7 +218,7 @@ void check_walls(void) {
         if (game.portals_open) {
             game.snake_is_here = false;
             // TODO: ENVIAR DATOS (score, dir_x, dir_y, posición) POR I2C ACÁ
-            if (game.audio_ok) audio_play_tone(440, 150);
+            if (game.audio_ok) wifi_audio_play_tone(440, 150);
         } else {
             game.game_over = true; 
             if (game.audio_ok) wifi_audio_play_tone(150, 400);
@@ -391,7 +391,7 @@ void app_main(void)
                         game.y = WALL_SIZE;
                     }
                     
-                    if (game.audio_ok) audio_play_tone(660, 150);
+                    if (game.audio_ok) wifi_audio_play_tone(660, 150);
                 }
             }
         }
