@@ -42,24 +42,29 @@ static void draw_mode_selection(int current_mode, bool visible) {
 esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_ok, int *selected_mode) {
     button_event_t ev;
 
-    // --- ANIMACIÓN DE ENTRADA (S-T-A-R-T) ---
+    // --- ANIMACIÓN DE ENTRADA (S-N-A-K-E) ---
     if (display_ok) {
         const int anim_frames = 20;
         const int anim_delay = 25;
         for (int step = 0; step <= anim_frames; step++) {
             display_clear();
+            
+            // S: De izquierda (x=0) a su posición final (x=49)
             int s_x  = 0 + (49 - 0) * step / anim_frames;
-            int t1_y = 64 + (36 - 64) * step / anim_frames;
-            int a_y  = 0 + (36 - 0) * step / anim_frames;
-            int r_y  = 64 + (36 - 64) * step / anim_frames;
-            int t2_x = 120 + (73 - 120) * step / anim_frames;
+            // N: De abajo (y=64) a (y=12)
+            int n_y  = 64 + (12 - 64) * step / anim_frames;
+            // A: De arriba (y=0) a (y=12)
+            int a_y  = 0 + (12 - 0) * step / anim_frames;
+            // K: De abajo (y=64) a (y=12)
+            int k_y  = 64 + (12 - 64) * step / anim_frames;
+            // E: De derecha (x=120) a (x=73)
+            int e_x  = 120 + (73 - 120) * step / anim_frames;
 
-            display_text(s_x, 36, "S", false);
-            display_text(55, t1_y, "T", false);
-            display_text(61, a_y,  "A", false);
-            display_text(67, r_y,  "R", false);
-            display_text(t2_x, 36, "T", false);
-            display_text(49, 12, "SNAKE", false);
+            display_text(s_x, 12, "S", false);
+            display_text(55, n_y, "N", false);
+            display_text(61, a_y, "A", false);
+            display_text(67, k_y, "K", false);
+            display_text(e_x, 12, "E", false);
             
             display_flush();
             vTaskDelay(pdMS_TO_TICKS(anim_delay));
@@ -70,9 +75,9 @@ esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_
     while (xQueueReceive(events, &ev, 0) == pdTRUE) {}
 
     // Configuración de la música
-    const int notes[] = {262, 330, 392, 523, 392, 330}; 
-    const int note_duration = 125; 
-    int num_notes = 6;
+    const int notes[] = {196, 220, 262, 220}; // Sol, La, Do, La (Octavas más graves)
+    const int note_duration = 250; // El doble de lento (250ms por nota)
+    int num_notes = 4;
     int note_idx = 0;
     
     int time_to_blink = 0; 
@@ -111,23 +116,21 @@ esp_err_t menu_wait_for_start(QueueHandle_t events, bool display_ok, bool audio_
                         if (audio_ok) wifi_audio_play_tone(880, 100);
                         if (display_ok) draw_mode_selection(current_mode, visible);
                     } else {
-                        // Navegar por el submenú
-                        if (ev.id == BTN_UP || ev.id == BTN_KEY4) {
-                            current_mode = 1;
-                            visible = true; time_to_blink = BLINK_MS;
+                        // Navegar por el submenú solo con el joystick (arriba/abajo)
+                        if (ev.id == BTN_UP || ev.id == BTN_DOWN) {
+                            current_mode = (current_mode == 1) ? 2 : 1; // Alterna entre 1 y 2
+                            visible = true; 
+                            time_to_blink = BLINK_MS;
                             if (audio_ok) wifi_audio_play_tone(440, 50);
                             if (display_ok) draw_mode_selection(current_mode, visible);
-                        } else if (ev.id == BTN_DOWN || ev.id == BTN_KEY2) {
-                            current_mode = 2;
-                            visible = true; time_to_blink = BLINK_MS;
-                            if (audio_ok) wifi_audio_play_tone(440, 50);
-                            if (display_ok) draw_mode_selection(current_mode, visible);
-                        } else if (ev.id == BTN_RIGHT || ev.id == BTN_KEY3 || ev.id == BTN_LEFT || ev.id == BTN_KEY1) {
-                            // Confirmar modo
+                        } 
+                        // Confirmar modo SOLO con el BOTÓN 1
+                        else if (ev.id == BTN_KEY1) {
                             if (audio_ok) wifi_audio_play_tone(1046, 400);
                             *selected_mode = current_mode;
                             return ESP_OK;
                         }
+                    }
                     }
                 }
                 
