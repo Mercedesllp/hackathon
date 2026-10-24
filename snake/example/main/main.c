@@ -49,6 +49,8 @@ typedef struct {
     int apple_x, apple_y;
 
     bool game_over;
+    bool game_over_notified; // <--- NUEVO: Para no mandar la muerte mil veces
+    
     bool snake_is_here;
     bool portals_open;
     int wall_anim_step;
@@ -199,6 +201,8 @@ static void reset_game(void) {
     game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
     
     game.game_over = false;
+    game.game_over_notified = false; // Reset de la notificación
+    
     game.portals_open = false;
     game.wall_anim_step = 0;
     
@@ -223,7 +227,6 @@ static void idle_drop_piece(void) {
         return;
     }
     
-    // Guardamos la pieza en nuestro "radar" del mapa enemigo
     if (idle.adv_walls_count < MAX_ADV_WALLS) {
         idle.adv_walls[idle.adv_walls_count].x = idle.cursor_x;
         idle.adv_walls[idle.adv_walls_count].y = idle.cursor_y;
@@ -380,15 +383,12 @@ static void receive_messages(void) {
                     game.score = m.score;
                     game.cola_visible = 0;
 
-                    // --- INICIO: PUERTITA FANTASMA ---
-                    // +2 fotogramas (cabeza + holgura para el último bloque de cola)
                     game.entry_steps_left = game.score + 2; 
                     game.entry_door_x = game.x;
                     game.entry_door_y = game.y;
                     game.entry_dir_x = game.dir_x;
                     game.entry_dir_y = game.dir_y;
-                    game.wall_anim_step = 0; // Paredes sólidas
-                    // --- FIN: PUERTITA FANTASMA ---
+                    game.wall_anim_step = 0;
 
                     if (game.audio_ok) wifi_audio_play_tone(660, 150);
                 }
@@ -398,6 +398,12 @@ static void receive_messages(void) {
                     walls_add(m.shape, m.rotation, m.x, m.y);
                     if (game.audio_ok) wifi_audio_play_tone(330, 100);
                 }
+                break;
+            case MSG_GAME_OVER:
+                // --- NUEVO: RECIBIMOS LA MUERTE DEL OTRO ---
+                game.game_over = true;
+                game.game_over_notified = true; // Para no devolverle el mensaje
+                if (game.audio_ok) wifi_audio_play_tone(150, 400);
                 break;
             default: break;
         }
@@ -464,7 +470,6 @@ static void render_walls(void) {
         display_fill_rect(w - WALL_SIZE, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
     }
     
-    // Dibuja el agujero fantasma para la puerta
     if (game.entry_steps_left > 0) {
         int hole_x = game.entry_door_x;
         int hole_y = game.entry_door_y;
@@ -512,7 +517,6 @@ static void render_idle(void) {
         display_fill_rect(118 + cells[i][0] * 2, 5 + cells[i][1] * 2, 2, 2, true);
     }
 
-    // Dibujar paredes holográficas del rival
     for (int w = 0; w < idle.adv_walls_count; w++) {
         walls_shape_cells(idle.adv_walls[w].shape, idle.adv_walls[w].rotation, cells);
         for (int i = 0; i < CELLS_PER_SHAPE; i++) {
@@ -566,7 +570,6 @@ void app_main(void) {
         game.is_multiplayer = (selected_mode == 2);
         bool back_to_menu = false;
 
-        // --- SALA DE ESPERA MULTIJUGADOR ---
         if (game.is_multiplayer) {
             bool amigo_encontrado = false;
             
@@ -627,7 +630,6 @@ void app_main(void) {
         while (!back_to_menu) {
             process_inputs(events, &back_to_menu);
 
-            // TESTING DE MENÚ PARED EN 1 JUGADOR
             if (game.in_wall_menu) {
                 int nueva_pared_x, nueva_pared_y;
                 bool nueva_pared_vert;
@@ -652,7 +654,6 @@ void app_main(void) {
                 receive_messages();
                 walls_update(snake_on_cell);
 
-                // Forzamos los portales a cerrarse mientras entramos por la puertita
                 if (game.entry_steps_left > 0) {
                     game.portals_open = false;
                 } else {
@@ -690,6 +691,15 @@ void app_main(void) {
                         walls_grant_piece();
                         idle.last_grant = xTaskGetTickCount();
                     }
+                }
+            }
+
+            // --- NUEVO: AVISAR MUERTE A LA OTRA PLACA ---
+            if (game.game_over && !game.game_over_notified) {
+                game.game_over_notified = true;
+                if (game.is_multiplayer) {
+                    message_t msg_muerte = { .type = MSG_GAME_OVER };
+                    radio_send(&msg_muerte);
                 }
             }
 

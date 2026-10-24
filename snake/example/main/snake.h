@@ -15,6 +15,7 @@ typedef enum {
     MSG_READY = 1, // sala de espera: "estoy listo"
     MSG_SNAKE = 2, // la serpiente cruza a tu placa (usa x, y, score)
     MSG_WALL  = 3, // te tiro una pared (usa x, y, shape, rotation)
+    MSG_GAME_OVER
 } msg_type_t;
 
 // Un solo formato para todos los mensajes: según `type`, se usan unos campos
