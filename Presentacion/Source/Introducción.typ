@@ -70,7 +70,7 @@
   - *Seguir agrandando la víbora*, para dejársela más difícil a Clementina cuando se la pase, pero mientras tanto, esta puede tirarle *más bloques*.
 
   #align(center)[
-    #image("assets/opciones_dos_manzanas.png", width: 80%)
+    #image("assets/opciones_dos_manzanas.jpeg", width: 80%)
   ]
 ]
 
