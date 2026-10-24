@@ -80,9 +80,6 @@ typedef struct {
 static GameState game;
 
 // -- JUGADOR QUE ESPERA: apunta a ciegas y le tira piezas a la otra placa --
-
-// TODO quiz: mientras no exista el desafío, se regala una pieza cada tanto.
-// Cuando esté el quiz, borrar esto y que el quiz llame a walls_grant_piece().
 #define PIECE_GRANT_MS 5000
 
 typedef struct {
@@ -165,7 +162,7 @@ void wifi_audio_play_tone(int freq_hz, int ms)
 
 static bool wifi_audio_init(void)
 {
-    esp_log_level_set("wifi", ESP_LOG_ERROR); // Silencia warnings de Wi-Fi
+    esp_log_level_set("wifi", ESP_LOG_ERROR); 
 
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -230,7 +227,7 @@ static void reset_game(void)
     game.portals_open = false;
     game.wall_anim_step = 0;
     
-    game.in_wall_menu = false; // Iniciamos sin el menú de paredes activo
+    game.in_wall_menu = false; 
     game.entry_steps_left = 0;
 
     game.snake_is_here = !game.is_multiplayer || empieza_con_serpiente;
@@ -244,11 +241,10 @@ static void reset_game(void)
     idle.last_grant = xTaskGetTickCount();
 }
 
-// Tira la pieza del cursor a la otra placa (si tiene alguna ganada)
 static void idle_drop_piece(void)
 {
     if (!walls_take_piece()) {
-        if (game.audio_ok) wifi_audio_play_tone(200, 80); // no tenés piezas
+        if (game.audio_ok) wifi_audio_play_tone(200, 80); 
         return;
     }
     message_t m = {
@@ -261,14 +257,11 @@ static void idle_drop_piece(void)
     radio_send(&m);
     if (game.audio_ok) wifi_audio_play_tone(990, 80);
 
-    // La que venía pasa a ser la actual, y se saca una nueva de la bolsa
     idle.piece = idle.next;
     idle.next = walls_bag_next();
     idle.rotation = 0;
 }
 
-// Botones del jugador que espera. El joystick está rotado igual que en el
-// juego: UP = izquierda, RIGHT = arriba, DOWN = derecha, LEFT = abajo.
 static void idle_handle_button(button_id_t id)
 {
     switch (id) {
@@ -280,7 +273,6 @@ static void idle_handle_button(button_id_t id)
         case BTN_KEY3:  idle_drop_piece(); break;
         default: break;
     }
-    // El cursor no se puede ir del tablero
     if (idle.cursor_x < 0) idle.cursor_x = 0;
     if (idle.cursor_x >= game.max_grid_x) idle.cursor_x = game.max_grid_x - 1;
     if (idle.cursor_y < 0) idle.cursor_y = 0;
@@ -303,8 +295,6 @@ static void process_inputs(QueueHandle_t events, bool *back_to_menu)
             continue;
         }
 
-        // Si la serpiente está en la otra placa, los botones son para apuntar
-        // y tirar piezas (salvo KEY1, que sigue siendo pausa)
         if (game.is_multiplayer && !game.snake_is_here && ev.id != BTN_KEY1) {
             idle_handle_button(ev.id);
             continue;
@@ -321,9 +311,7 @@ static void process_inputs(QueueHandle_t events, bool *back_to_menu)
                     *back_to_menu = true;
                 }
                 break;
-
-            // --- DEBUG (solo 1 jugador): tira una pared al azar en ESTA placa ---
-            // Para probar las paredes sin la otra placa. Borrar antes de presentar.
+            
             case BTN_KEY4:
                 if (!game.is_multiplayer) {
                     walls_add(esp_random() % NUM_SHAPES, esp_random() % NUM_ROTATIONS,
@@ -361,7 +349,7 @@ static void check_walls(void)
     if (game.y < WALL_SIZE) gy = -1;
 
     if (gx >= 0 && gx < game.max_grid_x && gy >= 0 && gy < game.max_grid_y) {
-        return; // dentro del tablero
+        return; 
     }
 
     int w = BOARD_LCD_WIDTH;
@@ -385,14 +373,13 @@ static void check_walls(void)
         }
     }
     
-    // Si la puertita de entrada está abierta justo donde salimos, NO chocamos
     if (game.entry_steps_left > 0) {
         choca_pared = false;
     }
 
     if (!choca_pared) {
         if (game.is_multiplayer) {
-            game.snake_is_here = false; // Se va a la otra placa
+            game.snake_is_here = false; 
             
             message_t mensaje = {
                 .type = MSG_SNAKE,
@@ -404,18 +391,15 @@ static void check_walls(void)
 
             if (game.audio_ok) wifi_audio_play_tone(440, 150);
         } else {
-            // 1 JUGADOR: En vez de reaparecer, activamos el placeholder del menú
             game.in_wall_menu = true;
             
-            // Calculamos desde ahora dónde va a estar esperando la serpiente 
-            // cuando terminemos de poner la pared
             if (gx < 0)                    game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
             else if (gx >= game.max_grid_x) game.x = WALL_SIZE;
 
             if (gy < 0)                    game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
             else if (gy >= game.max_grid_y) game.y = WALL_SIZE;
 
-            if (game.audio_ok) wifi_audio_play_tone(440, 150); // Sonido de salida
+            if (game.audio_ok) wifi_audio_play_tone(440, 150); 
         }
     } else {
         game.game_over = true;
@@ -423,8 +407,6 @@ static void check_walls(void)
     }
 }
 
-// Manzana nueva en una celda al azar que no sea una pared activa
-// (si no, no se podría comer sin morir). Tope de intentos por las dudas.
 static void place_apple(void)
 {
     int gx, gy;
@@ -446,7 +428,6 @@ static void check_apple_collision(void)
     }
 }
 
-// Lee TODOS los mensajes que llegaron de la otra placa y hace lo que dice cada uno
 static void receive_messages(void)
 {
     message_t m;
@@ -457,15 +438,21 @@ static void receive_messages(void)
                     snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
                     game.snake_is_here = true;
                     game.score = m.score;
-                    // Llega solo la cabeza: la cola va entrando atrás, un pedazo por frame.
-                    // (Los tail_x/tail_y que hay en memoria son viejos o basura.)
                     game.cola_visible = 0;
+
+                    // Configuramos la puertita de entrada
+                    game.entry_steps_left = game.score + 1; 
+                    game.entry_door_x = game.x;
+                    game.entry_door_y = game.y;
+                    game.entry_dir_x = game.dir_x;
+                    game.entry_dir_y = game.dir_y;
+                    game.wall_anim_step = 0;
+
                     if (game.audio_ok) wifi_audio_play_tone(660, 150);
                 }
                 break;
 
             case MSG_WALL:
-                // El otro jugador nos tiró una pieza: arranca titilando
                 if (m.shape < NUM_SHAPES) {
                     walls_add(m.shape, m.rotation, m.x, m.y);
                     if (game.audio_ok) wifi_audio_play_tone(330, 100);
@@ -473,16 +460,13 @@ static void receive_messages(void)
                 break;
 
             default:
-                break; // MSG_READY que quedó de la sala de espera, o basura
+                break;
         }
     }
 }
 
 static void update_tail_positions(int prev_x, int prev_y)
 {
-    // La cola en pantalla crece de a uno hasta alcanzar el largo total. En una
-    // partida normal la alcanza en el mismo frame (al comer); al llegar de la
-    // otra placa arranca en 0 y va entrando por el borde.
     if (game.cola_visible < game.score) game.cola_visible++;
 
     for (int i = game.cola_visible - 1; i > 0; i--) {
@@ -506,8 +490,6 @@ static void check_self_collision(void)
     }
 }
 
-// ¿Hay serpiente (cabeza o cola) en esta celda? walls_update() la usa para no
-// activar una pared encima de la serpiente.
 static bool snake_on_cell(int gx, int gy)
 {
     if (!game.snake_is_here) {
@@ -602,8 +584,6 @@ static void render_snake_here(void)
     }
 }
 
-// Pantalla del jugador que espera: no ve el juego del otro (apunta a ciegas),
-// solo la pieza en el cursor, cuántas piezas tiene y cuál viene.
 static void render_idle(void)
 {
     int8_t cells[CELLS_PER_SHAPE][2];
@@ -612,13 +592,11 @@ static void render_idle(void)
     snprintf(hud, sizeof(hud), "Piezas:%d", walls_pieces());
     display_text(3, 3, hud, false);
 
-    // La próxima pieza, chiquita (celdas de 2x2) arriba a la derecha
     walls_shape_cells(idle.next, 0, cells);
     for (int i = 0; i < CELLS_PER_SHAPE; i++) {
         display_fill_rect(118 + cells[i][0] * 2, 5 + cells[i][1] * 2, 2, 2, true);
     }
 
-    // La pieza en el cursor: llena si tenés para tirar, solo el borde si no
     bool can_drop = walls_pieces() > 0;
     walls_shape_cells(idle.piece, idle.rotation, cells);
     for (int i = 0; i < CELLS_PER_SHAPE; i++) {
@@ -687,36 +665,29 @@ void app_main(void)
             int mi_ticket = esp_random() % 10000;
 
             while (!amigo_encontrado && !back_to_menu) {
+                
                 if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
-                    message_t msg_ready = { .x = 127, .y = 127, .score = mi_ticket };
-                // 1. Gritar "Estoy listo" cada 300ms
-                if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
-                    message_t msg_ready = { .type = MSG_READY };
+                    message_t msg_ready = { .type = MSG_READY, .score = mi_ticket };
                     radio_send(&msg_ready);
                     ultimo_aviso = xTaskGetTickCount();
                 }
 
                 message_t msg_in;
                 if (radio_receive(&msg_in)) {
-                    if (msg_in.x == 127 && msg_in.y == 127) {
+                    if (msg_in.type == MSG_READY) {
                         if (mi_ticket == msg_in.score) {
                             mi_ticket = esp_random() % 10000;
                             continue;
                         }
 
-                    if (msg_in.type == MSG_READY) {
                         amigo_encontrado = true;
                         empieza_con_serpiente = (mi_ticket > msg_in.score);
                         
                         if (game.audio_ok) wifi_audio_play_tone(1046, 200);
                         
                         for (int i=0; i<3; i++) {
-                            message_t msg_ready = { .x = 127, .y = 127, .score = mi_ticket };
-
-                        // Le devolvemos un par de confirmaciones por si no nos escuchó
-                        for (int i=0; i<3; i++) {
-                            message_t msg_ready = { .type = MSG_READY };
-                            radio_send(&msg_ready);
+                            message_t msg_ready_confirm = { .type = MSG_READY, .score = mi_ticket };
+                            radio_send(&msg_ready_confirm);
                             vTaskDelay(pdMS_TO_TICKS(50));
                         }
                     }
@@ -741,23 +712,16 @@ void app_main(void)
         while (!back_to_menu) {
             process_inputs(events, &back_to_menu);
 
-            // --- NUEVO ESTADO: MENÚ DE PONER PARED (Placeholder para testing 1 Jugador) ---
-            // --- NUEVO ESTADO: MENÚ DE PONER PARED ---
+            // --- ESTADO: MENÚ DE PONER PARED (Testing 1 Jugador) ---
             if (game.in_wall_menu) {
                 int nueva_pared_x, nueva_pared_y;
                 bool nueva_pared_vert;
 
-                // Delegamos todo el control al menú visual
                 menu_place_wall(events, game.display_ok, game.audio_ok, 
                                 &nueva_pared_x, &nueva_pared_y, &nueva_pared_vert);
                 
-                // Acá a futuro guardaremos (nueva_pared_x, nueva_pared_y, nueva_pared_vert) 
-                // en el "mapa adversario" y se lo mandaremos por radio.
-                
-                // Dejamos el estado de pausa y volvemos a jugar
                 game.in_wall_menu = false;
                 
-                // Reaparecemos abriendo la puertita
                 game.entry_steps_left = game.score + 1; 
                 game.entry_door_x = game.x;
                 game.entry_door_y = game.y;
@@ -767,7 +731,6 @@ void app_main(void)
                 game.wall_anim_step = 0;
                 if (game.audio_ok) wifi_audio_play_tone(660, 150);
                 
-                // Reseteamos el reloj para que la serpiente no de un salto por el tiempo perdido
                 last_wake_time = xTaskGetTickCount();
                 continue; 
             }
@@ -775,19 +738,14 @@ void app_main(void)
             // --- LÓGICA NORMAL ---
             if (!game.game_over) {
                 
+                receive_messages();
+                walls_update(snake_on_cell);
+
                 if (game.entry_steps_left > 0) {
                     game.portals_open = false;
                 } else {
                     game.portals_open = ((game.score % 3) == 2);
                 }
-                // Mensajes de la otra placa (serpiente que llega, paredes que nos tiran)
-                receive_messages();
-
-                // Timers de las paredes: titilar -> activarse (si la serpiente no está encima)
-                walls_update(snake_on_cell);
-
-                // Los portales se abren cuando el score termina en 2 (2, 5, 8, 11...)
-                game.portals_open = ((game.score % 3) == 2);
 
                 if (game.portals_open) {
                     if (game.wall_anim_step < 128) game.wall_anim_step += 16;
@@ -810,7 +768,6 @@ void app_main(void)
 
                     check_walls();
 
-                    if (!game.game_over && game.snake_is_here && !game.in_wall_menu) {
                     if (!game.game_over && game.snake_is_here) {
                         check_wall_collision();
                     }
@@ -820,27 +777,6 @@ void app_main(void)
                         check_self_collision();
                     }
                 } else {
-                    // --- RECEPCIÓN DE DATOS DE LA OTRA PLACA ---
-                    message_t m;
-                    if (radio_receive(&m)) {
-                        if (m.x != 127 && m.y != 127) {
-                            if (snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
-                                game.snake_is_here = true;
-                                game.score = m.score;
-                                
-                                game.entry_steps_left = game.score + 1; 
-                                game.entry_door_x = game.x;
-                                game.entry_door_y = game.y;
-                                game.entry_dir_x = game.dir_x;
-                                game.entry_dir_y = game.dir_y;
-                                
-                                game.wall_anim_step = 0;
-                                
-                                if (game.audio_ok) wifi_audio_play_tone(660, 150);
-                            }
-                        }
-                    // La serpiente está en la otra placa: acá se apunta y se tiran piezas.
-                    // TODO quiz: reemplazar este regalo por el desafío
                     if (xTaskGetTickCount() - idle.last_grant >= pdMS_TO_TICKS(PIECE_GRANT_MS)) {
                         walls_grant_piece();
                         idle.last_grant = xTaskGetTickCount();
