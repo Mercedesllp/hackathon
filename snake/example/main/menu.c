@@ -171,7 +171,7 @@ static void draw_pause_menu(int current_option) {
     display_flush();
 }
 
-pause_choice_t menu_pause(QueueHandle_t events, bool display_ok, bool audio_ok) {
+int menu_pause(QueueHandle_t events, bool display_ok, bool audio_ok) {
     button_event_t ev;
     int current_option = 0; 
     
@@ -193,7 +193,7 @@ pause_choice_t menu_pause(QueueHandle_t events, bool display_ok, bool audio_ok) 
                 // Seleccionar opción con el BOTÓN 1
                 else if (ev.id == BTN_KEY1) {
                     if (audio_ok) wifi_audio_play_tone(1046, 200);
-                    return (pause_choice_t)current_option;
+                    return current_option;
                 }
             }
         }
