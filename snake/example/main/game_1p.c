@@ -1,3 +1,21 @@
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h" 
+#include "esp_random.h"
+
+#include "game_1p.h"
+#include "snake.h"
+#include "walls.h"
+#include "menu.h"
+#include "display.h"
+#include "sounds.h"
+
+static GameState s_game;
+
+static bool is_occupied_1p(int gx, int gy) {
+    return snake_on_cell(&s_game, gx, gy);
+}
+
 void game_1p_run(QueueHandle_t events, bool display_ok, bool audio_ok) {
     s_game.display_ok = display_ok;
     s_game.audio_ok = audio_ok;
