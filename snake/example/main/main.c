@@ -20,6 +20,7 @@
 #include "menu.h"
 #include "board.h"
 #include "sdkconfig.h"
+#include "snake.h"
 #include "radio.h"
 
 // 1 = esta placa arranca con la serpiente (placa 1), 0 = arranca sin ella (placa 2)
@@ -197,7 +198,7 @@ static void reset_game(void)
     game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
     game.game_over = false;
     game.portals_open = false;
-    // En 1 jugador la serpiente siempre está; en multijugador depende de la placa
+    // En 1 jugador la serpiente siempre está; en multijugador depende de la macro de la placa
     game.snake_is_here = !game.is_multiplayer || EMPIEZA_CON_SERPIENTE;
     game.wall_anim_step = 0;
 }
@@ -255,8 +256,6 @@ static void resolve_new_direction(void)
 
 static void check_walls(void)
 {
-    // Dividir con negativos en C trunca hacia 0, así que -4/4 = -1 pero -1/4 = 0.
-    // Como la serpiente se mueve de a SQUARE_SIZE, x=-3 -> (-3-1)/4 = -1: funciona.
     int gx = (game.x - WALL_SIZE) / SQUARE_SIZE;
     int gy = (game.y - WALL_SIZE) / SQUARE_SIZE;
 
@@ -270,7 +269,15 @@ static void check_walls(void)
     if (game.portals_open) {
         if (game.is_multiplayer) {
             game.snake_is_here = false; // Se va a la otra placa
-            // TODO: ENVIAR DATOS (score, dir, posición) POR I2C
+            
+            // --- ENVÍO DE DATOS A LA OTRA PLACA ---
+            message_t mensaje = {
+                .x = gx,
+                .y = gy,
+                .score = game.score,
+            };
+            radio_send(&mensaje);
+
             if (game.audio_ok) wifi_audio_play_tone(440, 150);
         } else {
             // 1 JUGADOR: aparece por el borde opuesto
@@ -335,19 +342,15 @@ static void render_walls(void)
     int vert_h = (h / 2) - (step / 2);
 
     if (horiz_w > 0) {
-        // Techo
         display_fill_rect(0, 0, horiz_w, WALL_SIZE, true);
         display_fill_rect((w / 2) + step, 0, horiz_w, WALL_SIZE, true);
-        // Piso
         display_fill_rect(0, h - WALL_SIZE, horiz_w, WALL_SIZE, true);
         display_fill_rect((w / 2) + step, h - WALL_SIZE, horiz_w, WALL_SIZE, true);
     }
 
     if (vert_h > 0) {
-        // Pared izquierda
         display_fill_rect(0, 0, WALL_SIZE, vert_h, true);
         display_fill_rect(0, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
-        // Pared derecha
         display_fill_rect(w - WALL_SIZE, 0, WALL_SIZE, vert_h, true);
         display_fill_rect(w - WALL_SIZE, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
     }
@@ -363,11 +366,9 @@ static void render_game_over(void)
 
 static void render_snake_here(void)
 {
-    // Manzana
     display_fill_rect(game.apple_x, game.apple_y, SQUARE_SIZE, SQUARE_SIZE, true);
     display_fill_rect(game.apple_x + 1, game.apple_y + 1, 1, 1, false);
 
-    // Cabeza y cola
     display_fill_rect(game.x, game.y, SQUARE_SIZE, SQUARE_SIZE, true);
     for (int i = 0; i < game.score; i++) {
         display_fill_rect(game.tail_x[i], game.tail_y[i], SQUARE_SIZE, SQUARE_SIZE, true);
@@ -390,8 +391,9 @@ void app_main(void)
 
     game.audio_ok = wifi_audio_init();
 
+    // Inicializamos la radio real
     bool radio_ok = radio_init() == ESP_OK;
-    (void)radio_ok; // TODO: usar cuando se implemente la comunicación entre placas
+    if (!radio_ok) ESP_LOGE(TAG, "Fallo al iniciar la radio");
 
     if (game.audio_ok) {
         wifi_audio_play_tone(523, 120);
@@ -444,26 +446,17 @@ void app_main(void)
                         check_self_collision();
                     }
                 } else {
-                    // TODO: LEER DATOS DE LA OTRA PLACA ACÁ
-
-                    // HACK TEMPORAL PARA TESTING: cualquier dirección "trae" la serpiente de vuelta
-                    if (game.votos_arriba > 0 || game.votos_abajo > 0 ||
-                        game.votos_izq > 0 || game.votos_der > 0) {
-
-                        game.snake_is_here = true;
-
-                        int gx = (game.x - WALL_SIZE) / SQUARE_SIZE;
-                        int gy = (game.y - WALL_SIZE) / SQUARE_SIZE;
-                        if (game.x < WALL_SIZE) gx = -1;
-                        if (game.y < WALL_SIZE) gy = -1;
-
-                        if (gx < 0)                        game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
-                        else if (gx >= game.max_grid_x)    game.x = WALL_SIZE;
-
-                        if (gy < 0)                        game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
-                        else if (gy >= game.max_grid_y)    game.y = WALL_SIZE;
-
-                        if (game.audio_ok) wifi_audio_play_tone(660, 150);
+                    // --- RECEPCIÓN DE DATOS DE LA OTRA PLACA ---
+                    message_t m;
+                    if (radio_receive(&m)) {
+                        // snake_arrive recalcula magicamente las coordenadas de entrada y direccion
+                        if (snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
+                            game.snake_is_here = true;
+                            game.score = m.score;
+                            
+                            // Reproducir un sonidito al recibirla
+                            if (game.audio_ok) wifi_audio_play_tone(660, 150);
+                        }
                     }
                 }
             }
