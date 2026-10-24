@@ -702,6 +702,92 @@ static void render_idle(void) {
     }
 }
 
+// Suposición: una función que lee el nivel de ruido actual del micrófono (0 a 100)
+static int read_mic_level(void) {
+    // ACÁ CONECTAS TU LECTURA DE HARDWARE (Ej: adc_get_raw o tu driver de micrófono)
+    // Por ejemplo, si usas un pin ADC:
+    // return adc1_get_raw(ADC1_CHANNEL_0) / 40; // Ajustado a escala 0-100
+    
+    return 0; // Placeholder por defecto
+}
+
+static bool run_fishing_minigame(QueueHandle_t events) {
+    int target_y = 20;       // Posición de la zona objetivo
+    int target_dir = 1;      // Dirección del objetivo (sube o baja)
+    float player_y = 40.0f;  // Posición de tu barrita
+    float progress = 0.0f;   // De 0.0 a 100.0 para ganar
+    
+    TickType_t last_wake = xTaskGetTickCount();
+    
+    while (1) {
+        // 1. ANULAR SI VUELVE LA SERPIENTE (Seguridad de red)
+        message_t msg_in;
+        if (radio_receive(&msg_in)) {
+            if (msg_in.type == MSG_SNAKE) {
+                // Si la serpiente vuelve, cancelamos el minijuego de inmediato
+                // (Acá tendrías que procesar la llegada o guardarla, pero por ahora salimos)
+                return false; 
+            }
+        }
+
+        // 2. MOVER LA ZONA OBJETIVO (Se mueve sola de arriba a abajo)
+        target_y += target_dir;
+        if (target_y <= 5 || target_y >= 45) {
+            target_dir *= -1; // Rebota en los extremos de la pantalla LCD
+        }
+
+        // 3. LEER EL MICRÓFONO PARA MOVER TU BARRITA
+        int mic_val = read_mic_level(); // 0 a 100
+        if (mic_val > 20) { // Umbral de sensibilidad para el soplido/voz
+            player_y -= 2.0f; // Sube si haces ruido
+        } else {
+            player_y += 1.5f; // Cae por "gravedad" si hay silencio
+        }
+        
+        // Limites de la barrita del jugador en pantalla
+        if (player_y < 0) player_y = 0;
+        if (player_y > 56) player_y = 56;
+
+        // 4. VERIFICAR SI ESTÁS ADENTRO DE LA ZONA OBJETIVO
+        // Supongamos que la zona objetivo mide 16 píxeles de alto
+        if (player_y >= target_y && player_y <= (target_y + 16)) {
+            progress += 2.5f; // Sube la barra de progreso si le atinas
+            if (progress >= 100.0f) {
+                return true; // ¡Ganaste el bloque!
+            }
+        } else {
+            progress -= 1.5f; // Baja si te salís
+            if (progress < 0.0f) progress = 0.0f;
+        }
+
+        // 5. RENDERIZAR EN LA PANTALLA LCD
+        if (game.display_ok) {
+            display_clear();
+            
+            // Título y barra de progreso general
+            display_text(0, 0, "¡PESCA EL BLOQUE!", false);
+            // Dibujar barrita de progreso horizontal arriba
+            int bar_w = (int)(progress * 128 / 100);
+            display_fill_rect(0, 8, bar_w, 3, true);
+
+            // Pista lateral vertical (Simulando la caña de pescar de Stardew)
+            // Riel de la pesca
+            display_draw_rect(100, 15, 6, 48);
+            
+            // Zona objetivo (Verde / Rellena)
+            display_fill_rect(101, 15 + target_y, 4, 16, true);
+            
+            // Tu barrita controlada por voz
+            display_fill_rect(99, 15 + (int)player_y, 8, 4, false); // O invertido según contraste
+
+            display_flush();
+        }
+
+        // 6. CONTROLAR LA VELOCIDAD DEL MINIJUEGO (Aprox 30 FPS)
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(33));
+    }
+}
+
 // -- BUCLE PRINCIPAL --
 
 void app_main(void) {
@@ -844,10 +930,13 @@ void app_main(void) {
                     }
                 } else {
                     // Si no tenemos pieza y no estamos en el puzle, se abre al instante automáticamente
-                    if (!idle.has_piece && !idle.in_quiz) {
-                        idle.in_quiz = true;
-                        idle.current_q = esp_random() % NUM_QUESTIONS;
-                        if (game.audio_ok) wifi_audio_play_tone(523, 100);
+                    // En vez de mostrar preguntas, lanzamos la pesca por micrófono
+                    bool fished_ok = run_fishing_minigame(events);
+                    
+                    if (fished_ok) {
+                        if (game.audio_ok) wifi_audio_play_tone(880, 150);
+                        idle.piece = walls_bag_next();
+                        idle.has_piece = true; // ¡Te ganaste la pieza soplando al micrófono!
                     }
                 }
             }
