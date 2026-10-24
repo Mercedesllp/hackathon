@@ -23,9 +23,6 @@
 #include "snake.h"
 #include "radio.h"
 
-// 1 = esta placa arranca con la serpiente (placa 1), 0 = arranca sin ella (placa 2)
-bool empieza_con_serpiente = true;
-
 #define WIFI_SSID   "kiwi-audio"
 #define WIFI_PASS   "kiwikiwi"
 
@@ -37,6 +34,8 @@ static const char *TAG = "demo";
 #define WALL_SIZE 1
 #define MAX_TAIL 200
 #define GAME_SPEED_MS 200
+
+bool empieza_con_serpiente = true;
 
 // -- ESTADO DEL JUEGO --
 typedef struct {
@@ -51,6 +50,13 @@ typedef struct {
     bool snake_is_here;
     bool portals_open;
     int wall_anim_step;
+
+    // Variables de la "puertita" de entrada
+    int entry_steps_left;
+    int entry_door_x;
+    int entry_door_y;
+    int entry_dir_x;
+    int entry_dir_y;
 
     int max_grid_x;
     int max_grid_y;
@@ -128,7 +134,6 @@ static void broadcast_audio(void *arg)
     }
 }
 
-// Audio no bloqueante: manda el tono a los celulares conectados
 void wifi_audio_play_tone(int freq_hz, int ms)
 {
     if (s_server != NULL) {
@@ -139,6 +144,8 @@ void wifi_audio_play_tone(int freq_hz, int ms)
 
 static bool wifi_audio_init(void)
 {
+    esp_log_level_set("wifi", ESP_LOG_ERROR); // Silencia warnings de Wi-Fi
+
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -196,11 +203,14 @@ static void reset_game(void)
     game.score = 0;
     game.apple_x = WALL_SIZE + (esp_random() % game.max_grid_x) * SQUARE_SIZE;
     game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
+    
     game.game_over = false;
     game.portals_open = false;
-    // En 1 jugador la serpiente siempre está; en multijugador depende de la macro de la placa
-    game.snake_is_here = !game.is_multiplayer || empieza_con_serpiente;
     game.wall_anim_step = 0;
+    
+    game.entry_steps_left = 0;
+
+    game.snake_is_here = !game.is_multiplayer || empieza_con_serpiente;
 }
 
 static void process_inputs(QueueHandle_t events, bool *back_to_menu)
@@ -220,13 +230,11 @@ static void process_inputs(QueueHandle_t events, bool *back_to_menu)
         }
 
         switch (ev.id) {
-            // --- MOVIMIENTOS ---
             case BTN_UP:    game.votos_izq++;    break;
             case BTN_RIGHT: game.votos_arriba++; break;
             case BTN_DOWN:  game.votos_der++;    break;
             case BTN_LEFT:  game.votos_abajo++;  break;
 
-            // --- BOTÓN DE PAUSA ---
             case BTN_KEY1:
                 if (menu_pause(events, game.display_ok, game.audio_ok) == PAUSE_QUIT) {
                     *back_to_menu = true;
@@ -267,7 +275,6 @@ static void check_walls(void)
     }
 
     // --- LÓGICA DE COLISIÓN FÍSICA PRECISA ---
-    // Calculamos dónde están las paredes físicamente en este fotograma
     int w = BOARD_LCD_WIDTH;
     int h = BOARD_LCD_HEIGHT;
     int step = game.wall_anim_step;
@@ -280,20 +287,21 @@ static void check_walls(void)
     bool choca_pared = false;
 
     if (gx < 0 || gx >= game.max_grid_x) {
-        // Salió por izquierda o derecha: chequeamos su 'y' contra el muro superior e inferior
-        // Sumamos SQUARE_SIZE para considerar toda la cabeza, no solo el puntito de origen
         if (game.y < vert_h || (game.y + SQUARE_SIZE) > (h / 2) + (step / 2)) {
             choca_pared = true;
         }
     } else if (gy < 0 || gy >= game.max_grid_y) {
-        // Salió por arriba o abajo: chequeamos su 'x' contra el muro izquierdo y derecho
         if (game.x < horiz_w || (game.x + SQUARE_SIZE) > (w / 2) + step) {
             choca_pared = true;
         }
     }
+    
+    // Si la puertita de entrada está abierta justo donde salimos, NO chocamos
+    if (game.entry_steps_left > 0) {
+        choca_pared = false;
+    }
 
     if (!choca_pared) {
-        // ¡Pasó limpiamente por el hueco!
         if (game.is_multiplayer) {
             game.snake_is_here = false; // Se va a la otra placa
             
@@ -316,7 +324,6 @@ static void check_walls(void)
             if (game.audio_ok) wifi_audio_play_tone(660, 150);
         }
     } else {
-        // Chocó contra la pared (ya sea cerrada, abriéndose o cerrándose)
         game.game_over = true;
         if (game.audio_ok) wifi_audio_play_tone(150, 400);
     }
@@ -368,6 +375,7 @@ static void render_walls(void)
     int horiz_w = (w / 2) - step;
     int vert_h = (h / 2) - (step / 2);
 
+    // Dibuja las paredes sólidas normales
     if (horiz_w > 0) {
         display_fill_rect(0, 0, horiz_w, WALL_SIZE, true);
         display_fill_rect((w / 2) + step, 0, horiz_w, WALL_SIZE, true);
@@ -380,6 +388,29 @@ static void render_walls(void)
         display_fill_rect(0, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
         display_fill_rect(w - WALL_SIZE, 0, WALL_SIZE, vert_h, true);
         display_fill_rect(w - WALL_SIZE, (h / 2) + (step / 2), WALL_SIZE, vert_h, true);
+    }
+    
+    // --- DIBUJAR PUERTITA DE ENTRADA (AGUJERO FANTASMA) ---
+    if (game.entry_steps_left > 0) {
+        int hole_x = game.entry_door_x;
+        int hole_y = game.entry_door_y;
+        int hole_w = SQUARE_SIZE;
+        int hole_h = SQUARE_SIZE;
+
+        if (game.entry_dir_x != 0) { 
+            // Entra por izquierda o derecha
+            hole_w = WALL_SIZE;
+            if (game.entry_dir_x == 1) hole_x = 0; 
+            else hole_x = w - WALL_SIZE;           
+        } else { 
+            // Entra por arriba o abajo
+            hole_h = WALL_SIZE;
+            if (game.entry_dir_y == 1) hole_y = 0; 
+            else hole_y = h - WALL_SIZE;           
+        }
+        
+        // 'false' borra los pixeles de la pared, creando un agujero temporal
+        display_fill_rect(hole_x, hole_y, hole_w, hole_h, false); 
     }
 }
 
@@ -418,7 +449,6 @@ void app_main(void)
 
     game.audio_ok = wifi_audio_init();
 
-    // Inicializamos la radio real
     bool radio_ok = radio_init() == ESP_OK;
     if (!radio_ok) ESP_LOGE(TAG, "Fallo al iniciar la radio");
 
@@ -450,45 +480,34 @@ void app_main(void)
                 display_flush();
             }
 
-            // Limpiamos la basura vieja que haya quedado en la radio o botones
             message_t basura;
             while (radio_receive(&basura)) {}
             button_event_t ev_basura;
             while (xQueueReceive(events, &ev_basura, 0)) {}
 
             TickType_t ultimo_aviso = 0;
-            
-            // "Tiramos los dados": generamos un número al azar del 0 al 9999
             int mi_ticket = esp_random() % 10000;
 
             while (!amigo_encontrado && !back_to_menu) {
-                // 1. Gritar nuestro número cada 300ms
                 if (xTaskGetTickCount() - ultimo_aviso > pdMS_TO_TICKS(300)) {
-                    // Usamos el campo score para mandar el ticket
                     message_t msg_ready = { .x = 127, .y = 127, .score = mi_ticket };
                     radio_send(&msg_ready);
                     ultimo_aviso = xTaskGetTickCount();
                 }
 
-                // 2. Escuchar el número del amigo
                 message_t msg_in;
                 if (radio_receive(&msg_in)) {
                     if (msg_in.x == 127 && msg_in.y == 127) {
-                        
-                        // Si de casualidad sacaron el mismo número, tiramos de vuelta y seguimos esperando
                         if (mi_ticket == msg_in.score) {
                             mi_ticket = esp_random() % 10000;
                             continue;
                         }
 
                         amigo_encontrado = true;
-                        
-                        // El que tiene el número mayor empieza con la serpiente
                         empieza_con_serpiente = (mi_ticket > msg_in.score);
                         
                         if (game.audio_ok) wifi_audio_play_tone(1046, 200);
                         
-                        // Le devolvemos 3 confirmaciones para que el otro también pueda comparar los números
                         for (int i=0; i<3; i++) {
                             message_t msg_ready = { .x = 127, .y = 127, .score = mi_ticket };
                             radio_send(&msg_ready);
@@ -497,7 +516,6 @@ void app_main(void)
                     }
                 }
 
-                // 3. Permitir cancelar y volver al menú con el Botón 1
                 button_event_t ev;
                 if (xQueueReceive(events, &ev, pdMS_TO_TICKS(50)) == pdTRUE) {
                     if (ev.pressed && ev.id == BTN_KEY1) {
@@ -518,8 +536,13 @@ void app_main(void)
             process_inputs(events, &back_to_menu);
 
             if (!game.game_over) {
-                // Los portales se abren cuando el score termina en 2 (2, 5, 8, 11...)
-                game.portals_open = ((game.score % 3) == 2);
+                
+                // Si la serpiente está entrando por la puertita, anulamos la apertura de portales normal
+                if (game.entry_steps_left > 0) {
+                    game.portals_open = false;
+                } else {
+                    game.portals_open = ((game.score % 3) == 2);
+                }
 
                 if (game.portals_open) {
                     if (game.wall_anim_step < 128) game.wall_anim_step += 16;
@@ -535,6 +558,11 @@ void app_main(void)
 
                     game.x += game.dir_x * SQUARE_SIZE;
                     game.y += game.dir_y * SQUARE_SIZE;
+                    
+                    // Restamos 1 paso a la puertita en cada movimiento
+                    if (game.entry_steps_left > 0) {
+                        game.entry_steps_left--;
+                    }
 
                     check_walls();
 
@@ -547,11 +575,21 @@ void app_main(void)
                     // --- RECEPCIÓN DE DATOS DE LA OTRA PLACA ---
                     message_t m;
                     if (radio_receive(&m)) {
-                        // Ignoramos los avisos de "127" (pueden ser ecos viejos de la sala de espera)
                         if (m.x != 127 && m.y != 127) {
                             if (snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
                                 game.snake_is_here = true;
                                 game.score = m.score;
+                                
+                                // INICIALIZAMOS LA PUERTITA FANTASMA
+                                // +1 porque cuenta la cabeza cruzando el muro
+                                game.entry_steps_left = game.score + 1; 
+                                game.entry_door_x = game.x;
+                                game.entry_door_y = game.y;
+                                game.entry_dir_x = game.dir_x;
+                                game.entry_dir_y = game.dir_y;
+                                
+                                // Cerramos todas las paredes al instante
+                                game.wall_anim_step = 0;
                                 
                                 if (game.audio_ok) wifi_audio_play_tone(660, 150);
                             }
