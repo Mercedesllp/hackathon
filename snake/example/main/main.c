@@ -92,6 +92,10 @@ typedef struct {
     int rotation;           
     TickType_t last_grant;  
     
+    // Control del Quiz
+    bool in_quiz;
+    int current_q;
+
     // Historial del mapa adversario
     struct {
         int x, y;
@@ -102,6 +106,30 @@ typedef struct {
 } IdleState;
 
 static IdleState idle;
+
+// --- Modo preguntas
+typedef struct {
+    const char *question;
+    const char *options[3];
+    int correct; // 0 = A, 1 = B, 2 = C
+} quiz_question_t;
+
+static const quiz_question_t quiz[] = {
+    {"Que fue primero?",     {"A) El huevo", "B) El aura", "C) El silencio"}, 0},
+    {"Apodo para Francisco", {"A) CORNUDO", "B) BORRACHO", "C) PANCHO"}, 1},
+    {"Pelu...",              {"A) ..queria", "B) ..che", "C) ..sa"}, 1},
+    {"6x7?",                 {"A) 42", "B) Cuarenta y dos", "C) Cuarentidos"}, 1},
+    {"Atomos en el universo?",{"A) 500 millones", "B) muchos", "C) 10^80"}, 2},
+    {"Mejor infusion?",      {"A) Mate", "B) Te", "C) Cafe"}, 0},
+    {"Direccion de Mer?",    {"A) Av. Diaz Velez 2786", "B) Segurola 3321", "C) Pabe 0"}, 1},
+    {"100000000 + 1?",       {"A) 100000001", "B) 10000001", "C) 10000000001"}, 0},
+    {"121x45?",              {"A) 4885", "B) 5445", "C) 1000"}, 1},
+    {"Mejor dia?",           {"A) Sabado", "B) Viernes", "C) Mañana"}, 2},
+    {"Amargo y...",          {"A) Dulce", "B) Agrio", "C) Retruco"}, 2},
+};
+
+#define NUM_QUESTIONS ((int)(sizeof(quiz) / sizeof(quiz[0])))
+static const int ANSWER_BTN[3] = {BTN_KEY1, BTN_KEY2, BTN_KEY3};
 
 // --- INICIO SISTEMA DE AUDIO POR WIFI ---
 static const char s_page[] =
@@ -284,6 +312,31 @@ static void idle_drop_piece(void) {
 }
 
 static void idle_handle_button(button_id_t id) {
+    if (idle.in_quiz) {
+        for (int i = 0; i < 3; i++) {
+            if (id == ANSWER_BTN[i]) {
+                bool ok = (i == quiz[idle.current_q].correct);
+                if (ok) {
+                    if (game.audio_ok) wifi_audio_play_tone(880, 150);
+                    walls_grant_piece(); // ¡Ganaste una pieza por responder bien!
+                } else {
+                    if (game.audio_ok) wifi_audio_play_tone(220, 300);
+                }
+                
+                // Mostramos resultado brevemente en pantalla
+                if (game.display_ok) {
+                    display_clear();
+                    display_text(0, 20, ok ? "¡CORRECTO! +1 Bloque" : "INCORRECTO :(", true);
+                    display_flush();
+                }
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                
+                idle.in_quiz = false;
+                return;
+            }
+        }
+        return; // Ignoramos otros botones mientras estamos en el quiz
+    }
     switch (id) {
         case BTN_UP:    idle.cursor_x--; break;
         case BTN_RIGHT: idle.cursor_y--; break;
@@ -595,6 +648,19 @@ static void render_snake_here(void) {
 
 static void render_idle(void) {
     int8_t cells[CELLS_PER_SHAPE][2];
+
+    // --- SI ESTAMOS EN EL QUIZ, MOSTRAMOS LA PREGUNTA ---
+    if (idle.in_quiz) {
+        display_clear();
+        display_text(0, 0, "¡REVISA EL PUZZLE!", true);
+        display_text(0, 12, quiz[idle.current_q].question, false);
+        for (int j = 0; j < 3; j++) {
+            display_text(0, 28 + j * 10, quiz[idle.current_q].options[j], false);
+        }
+        display_text(0, 56, "K1=A  K2=B  K3=C", false);
+        return;
+    }
+
     char hud[16];
     snprintf(hud, sizeof(hud), "Piezas:%d", walls_pieces());
     display_text(3, 3, hud, false);
