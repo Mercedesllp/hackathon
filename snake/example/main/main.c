@@ -707,7 +707,7 @@ static bool run_fishing_minigame(void) {
     int target_y = 16;       // Posición inicial de la zona objetivo
     int target_dir = 1;      // Dirección del objetivo (sube/baja)
     float player_y = 30.0f;  // Posición de tu barrita controlada por voz
-    float progress = 0.0f;   // Progreso interno para ganar
+    float progress = 0.0f;   // Progreso interno de 0.0 a 100.0
     
     TickType_t last_wake = xTaskGetTickCount();
     
@@ -724,14 +724,13 @@ static bool run_fishing_minigame(void) {
             target_dir *= -1;
         }
 
-        // 3. LEER EL MICRÓFONO CON MENOS SENSIBILIDAD
+        // 3. LEER EL MICRÓFONO
         int mic_val = audio_mic_level(); // 0 a 100
         
-        // ANTES ESTABA EN 15. LO SUBIMOS A 45 O 50 PARA QUE EXIJA SOPLAR O HABLAR FUERTE
         if (mic_val > 45) { 
-            player_y -= 1.5f; // Sube más suave (menos brusco)
+            player_y -= 1.5f; // Sube al soplar
         } else {
-            player_y += 1.2f; // Cae por gravedad de forma controlada
+            player_y += 1.2f; // Cae por gravedad
         }
         
         // Límites de la barrita en pantalla
@@ -757,6 +756,14 @@ static bool run_fishing_minigame(void) {
             display_text(4, 20, "¡SOPLA!", false);
             display_text(4, 32, "PESCA!", false);
 
+            // --- BARRITA DE PROGRESO VERTICAL (A la izquierda del riel) ---
+            // Contorno de la barra de progreso (alto 48, ancho 5)
+            display_draw_rect(88, 10, 5, 48);
+            // Relleno que sube a medida que avanzás (proporcional de 0 a 48 píxeles)
+            int fill_h = (int)(progress * 48 / 100);
+            display_fill_rect(89, 10 + (48 - fill_h), 3, fill_h, true);
+
+            // --- RIELE DE PESCA (A la derecha) ---
             display_draw_rect(96, 10, 14, 48);
             display_fill_rect(98, 10 + target_y, 10, 14, true);
             display_fill_rect(95, 10 + (int)player_y, 16, 4, false);
