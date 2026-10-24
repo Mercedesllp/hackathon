@@ -172,7 +172,7 @@ void process_inputs(QueueHandle_t events, bool *back_to_menu) {
     while (xQueueReceive(events, &ev, 0) == pdTRUE) {
         if (ev.pressed) {
             if (game.game_over) {
-                reset_game();
+                *back_to_menu = true;
             } else {
                 switch (ev.id) {
                     // --- MOVIMIENTOS ---
