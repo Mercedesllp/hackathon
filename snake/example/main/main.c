@@ -43,6 +43,7 @@ typedef struct {
     int x, y;
     int dir_x, dir_y;
     int score;        
+    int apples_eaten_here;
     int cola_visible; 
     int tail_x[MAX_TAIL];
     int tail_y[MAX_TAIL];
@@ -196,6 +197,7 @@ static void reset_game(void) {
     game.dir_x = 1;
     game.dir_y = 0;
     game.score = 0;
+    game.apples_eaten_here = 0;
     game.cola_visible = 0;
     game.apple_x = WALL_SIZE + (esp_random() % game.max_grid_x) * SQUARE_SIZE;
     game.apple_y = WALL_SIZE + (esp_random() % game.max_grid_y) * SQUARE_SIZE;
@@ -343,6 +345,7 @@ static void check_walls(void) {
             if (game.audio_ok) wifi_audio_play_tone(440, 150);
         } else {
             game.in_wall_menu = true;
+            game.apples_eaten_here = 0;
             if (gx < 0) game.x = WALL_SIZE + (game.max_grid_x - 1) * SQUARE_SIZE;
             else if (gx >= game.max_grid_x) game.x = WALL_SIZE;
             if (gy < 0) game.y = WALL_SIZE + (game.max_grid_y - 1) * SQUARE_SIZE;
@@ -368,6 +371,7 @@ static void place_apple(void) {
 static void check_apple_collision(void) {
     if (game.x == game.apple_x && game.y == game.apple_y) {
         if (game.score < MAX_TAIL) game.score++;
+        game.apples_eaten_here++; 
         if (game.audio_ok) wifi_audio_play_tone(880, 50);
         place_apple();
     }
@@ -381,6 +385,7 @@ static void receive_messages(void) {
                 if (!game.snake_is_here && snake_arrive(&m, &game.x, &game.y, &game.dir_x, &game.dir_y)) {
                     game.snake_is_here = true;
                     game.score = m.score;
+                    game.apples_eaten_here = 0;
                     game.cola_visible = 0;
 
                     game.entry_steps_left = game.score + 2; 
@@ -657,7 +662,7 @@ void app_main(void) {
                 if (game.entry_steps_left > 0) {
                     game.portals_open = false;
                 } else {
-                    game.portals_open = ((game.score % 3) == 2);
+                    game.portals_open = ((game.portals_open % 3) == 2);
                 }
 
                 if (game.portals_open) {
