@@ -381,7 +381,7 @@ static void process_inputs(QueueHandle_t events, bool *back_to_menu) {
         if (!ev.pressed) continue;
         if (game.game_over) { *back_to_menu = true; continue; }
 
-        if (game.is_multiplayer && !game.snake_is_here && ev.id != BTN_KEY1) {
+        if (game.is_multiplayer && !game.snake_is_here) {
             idle_handle_button(ev.id);
             continue;
         }
