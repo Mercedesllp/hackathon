@@ -308,12 +308,13 @@ static void idle_handle_button(button_id_t id) {
         if (cells[i][1] > max_dy) max_dy = cells[i][1];
     }
 
-    // Restringimos el cursor para que ningún bloque de la pieza se salga de la pantalla
-    if (idle.cursor_x + min_dx < 0)                   idle.cursor_x = -min_dx;
-    if (idle.cursor_x + max_dx >= game.max_grid_x)    idle.cursor_x = game.max_grid_x - 1 - max_dx;
+    // LÍMITES CON MARGEN DE 4 PÍXELES (1 CELDA) DE LAS PAREDES:
+    // Cambiamos el límite inferior de 0 a 1, y el superior de max-1 a max-2
+    if (idle.cursor_x + min_dx < 1)                   idle.cursor_x = 1 - min_dx;
+    if (idle.cursor_x + max_dx >= game.max_grid_x - 1) idle.cursor_x = game.max_grid_x - 2 - max_dx;
     
-    if (idle.cursor_y + min_dy < 0)                   idle.cursor_y = -min_dy;
-    if (idle.cursor_y + max_dy >= game.max_grid_y)    idle.cursor_y = game.max_grid_y - 1 - max_dy;
+    if (idle.cursor_y + min_dy < 1)                   idle.cursor_y = 1 - min_dy;
+    if (idle.cursor_y + max_dy >= game.max_grid_y - 1) idle.cursor_y = game.max_grid_y - 2 - max_dy;
 }
 
 static void process_inputs(QueueHandle_t events, bool *back_to_menu) {
