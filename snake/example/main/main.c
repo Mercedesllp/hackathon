@@ -23,6 +23,7 @@
 #include "snake.h"
 #include "radio.h"
 #include "walls.h"
+#include "audio.h"
 
 #define WIFI_SSID   "kiwi-audio"
 #define WIFI_PASS   "kiwikiwi"
@@ -700,15 +701,6 @@ static void render_idle(void) {
             display_fill_rect(px + 1, py + 1, SQUARE_SIZE - 2, SQUARE_SIZE - 2, false);
         }
     }
-}
-
-// Suposición: una función que lee el nivel de ruido actual del micrófono (0 a 100)
-static int read_mic_level(void) {
-    // ACÁ CONECTAS TU LECTURA DE HARDWARE (Ej: adc_get_raw o tu driver de micrófono)
-    // Por ejemplo, si usas un pin ADC:
-    // return adc1_get_raw(ADC1_CHANNEL_0) / 40; // Ajustado a escala 0-100
-    
-    return 0; // Placeholder por defecto
 }
 
 static bool run_fishing_minigame(void) {
