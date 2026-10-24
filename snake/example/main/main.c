@@ -333,6 +333,8 @@ void render_waiting(void) {
 
 // -- BUCLE PRINCIPAL --
 
+// -- BUCLE PRINCIPAL --
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Hackathon board demo starting");
@@ -341,7 +343,10 @@ void app_main(void)
     ESP_ERROR_CHECK(buttons_init());
 
     game.audio_ok = wifi_audio_init();
-    bool radio_ok = radio_init() == ESP_OK; // Código nuevo del merge
+    
+    bool radio_ok = radio_init() == ESP_OK;
+    (void)radio_ok; // HACK: Evita el error de "unused variable" al compilar
+
     if (game.audio_ok) {
         wifi_audio_play_tone(523, 120);
     }
@@ -368,7 +373,7 @@ void app_main(void)
         // BUCLE INTERNO: La partida en curso
         while (!back_to_menu) {
             
-            // Le pasamos el puntero para que la pausa o el game_over puedan cambiar back_to_menu a true
+            // Le pasamos el puntero para que la pausa pueda cambiar back_to_menu a true
             process_inputs(events, &back_to_menu);
 
             if (!game.game_over) {
