@@ -125,7 +125,7 @@ static void check_walls(GameState *g) {
     } else if (gy < 0 || gy >= g->max_grid_y) {
         if (g->x < horiz_w || (g->x + SQUARE_SIZE) > (w / 2) + step) choca_pared = true;
     }
-
+    
     if (g->entry_steps_left > 0) choca_pared = false;
 
     if (!choca_pared) {
@@ -136,13 +136,14 @@ static void check_walls(GameState *g) {
             radio_send(&mensaje);
             if (g->audio_ok) wifi_audio_play_tone(440, 150);
         } else {
-            g->in_wall_menu = true;
-            g->apples_eaten_here = 0;
+            // Teletransporte clásico estilo Pac-Man en 1 Jugador
             if (gx < 0) g->x = WALL_SIZE + (g->max_grid_x - 1) * SQUARE_SIZE;
             else if (gx >= g->max_grid_x) g->x = WALL_SIZE;
+            
             if (gy < 0) g->y = WALL_SIZE + (g->max_grid_y - 1) * SQUARE_SIZE;
             else if (gy >= g->max_grid_y) g->y = WALL_SIZE;
-            if (g->audio_ok) wifi_audio_play_tone(440, 150);
+
+            if (g->audio_ok) wifi_audio_play_tone(440, 150); 
         }
     } else {
         g->game_over = true;
